@@ -76,7 +76,6 @@ inline __host__ __device__ float entropyDelta4(count_type4 rr)
 				ret -= ((float) rr.x/m) * log2((float) rr.x/(float) rr.z) + ((float) (rr.z - rr.x)/m) * log2((float) (rr.z - rr.x)/(float) rr.z);
 #endif
 	//	}
-#endif
 	return ret;
 }
 

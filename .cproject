@@ -61,6 +61,7 @@
 			<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
 			<storageModule moduleId="com.nvidia.cuda.ide.build.project.ICudaProjectConfiguration">
 				<executable devicelink="true"/>
+				<editor-arch major="1" minor="0"/>
 			</storageModule>
 		</cconfiguration>
 		<cconfiguration id="cuda.toolchain.configuration.release.425017883">
