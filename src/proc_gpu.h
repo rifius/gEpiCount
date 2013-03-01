@@ -26,6 +26,7 @@
 #define PROC_GPU_H_
 
 #include "../inc/gEpiCount.h"
+#include "../inc/gABKEpi.h"
 #include "misc/Timer.h"
 
 #define		K1_FREE_FACTOR		0.8f		// Fraction of available memory to be used in results (max)
@@ -130,7 +131,15 @@ __host__ __device__ inline T rotr1(const T val)
 	return (val >> 1) | (val << (sizeof(T)*8 - 1));
 }
 
+// Flags for pairs
+#define		P_VALID		0x1
+#define		P_ALPHA		0x2
 
+// Indices for counters
+#define		IDX_ALPHA	0
+#define		IDX_BETA	1
+
+//######## For kernel 1
 void process_gpu_1(PlinkReader<ui8> *pr, InteractionResult *tops, const struct _paramP1 &par);
 void process_gpu_1(PlinkReader<ui4> *pr, InteractionResult *tops, const struct _paramP1 &par);
 
@@ -149,11 +158,28 @@ bool mergeResults(IntResultPointers &h_IRPtrs, dim3 offTL, dim3 blk, dim3 grd, I
 void zeroResults(IntResultPointers &h_irptrs, int nRes, int nTop);
 void initDeviceResults(IntResultPointers &d_irptrs, dim3 grid, dim3 block, int nir, const struct _paramP1 &par);
 
-__global__ void k1_fisherpv(IntResultPointers *ptrs, int numRes, int nSamp);
-__global__ void k1_entropy(IntResultPointers *ptrs, int numRes);
-
 void computeEntropyObjective(IntResultPointers dptrs, dim3 grd, dim3 blk, int nRes, int nSamp);
 
 void checkLaunchLoops(dim3 gr, dim3 bl, size_t numRes, dim3 firstG, IntResultPointers &h_irptrs, size_t nSNPs, size_t nELE);
+
+__global__ void k1_fisherpv(IntResultPointers *ptrs, int numRes, int nSamp);
+__global__ void k1_entropy(IntResultPointers *ptrs, int numRes);
+template <typename T>
+__global__ void k1_count_sm(const struct _dataPointersD<T> dptrs, IntResultPointers *ptrs, int numRes, dim3 firstG, int nSNPs, int nELE);
+template <typename T>
+__global__ void k1_count(const struct _dataPointersD<T> dptrs, IntResultPointers *ptrs, int numRes, dim3 firstG, int nSNPs, int nELE);
+
+//######## For Kernel 2 (ABK)
+void process_gpu_2(PlinkReader<ui8> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
+void process_gpu_2(PlinkReader<ui4> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
+
+template <typename T>
+__global__ void k2_g(const struct _dataPointersPairsD<T> P, const dim3 firstG, const size_t nSNPs, const size_t nSamp,
+		const size_t nELE, const size_t nPairs, const int nResPP, PairInteractionResult *ptops);
+
+int allocResults_device(PairInteractionResult **d_pir, int nPIR, const struct _paramP1 &par);
+int allocResults_host(PairInteractionResult **h_pir, int nPIR, const struct _paramP1 &par);
+void freeResults_device(const PairInteractionResult &h_pir, const struct _paramP1 &par);
+void freeResults_host(const PairInteractionResult &h_pir, const struct _paramP1 &par);
 
 #endif /* PROC_GPU_H_ */

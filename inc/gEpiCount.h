@@ -121,6 +121,7 @@ struct _paramP1
 	bool	shmem;			// Use SHM memory kernel
 	bool	alt; 			// Use alternate block & grid on init & entropy computation
 	bool	intermediate;	// Print periodic sample results at diagonal
+	bool 	abk; 			// Generate Alfa Beta K instance
 	string	name;			// Input file root
 	int 	blkSzX;			// Obscure
 	int		blkSzY;			// idem

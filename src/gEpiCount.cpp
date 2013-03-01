@@ -83,13 +83,32 @@ int main (int argc, char *argv[]) {
 	InteractionResult *gtops = new InteractionResult[par.topmost];
 	std::memset(gtops, 0, par.topmost * sizeof(InteractionResult));
 
-	if (par.gold)
-		process_gold_1(plkr, gtops, par);
+	const size_t nPairs = nSAMP * (nSAMP - 1) / 2;
+	const int nPP = ilogb((double) nPairs) + 1;
+	printf("\nThere are %ld pairs, ilogb(pairs): %d\n", nPairs, nPP);
+	printf("Size of array of %ld blocks of %d pair results: %ld (%ldMB)\n", nPairs, nPP, nPairs * nPP * sizeof(PairInteractionResult),
+			(nPairs * nPP * sizeof(PairInteractionResult) + ONEMEGA - 1)/ONEMEGA);
+	PairInteractionResult *pIr = new PairInteractionResult[nPP * nPairs];
+	std:: memset(pIr, 0 , nPP * nPairs * sizeof(PairInteractionResult));
+
+	if (par.abk)
+	{
+		if (par.gold)
+			process_gold_2(plkr, nPairs, nPP, pIr, par);
+		else
+			process_gpu_2(plkr, nPairs, nPP, pIr, par);
+	}
 	else
-		process_gpu_1(plkr, gtops, par);
-	printInteractions(plkr, gtops, par.topmost);
+	{
+		if (par.gold)
+			process_gold_1(plkr, gtops, par);
+		else
+			process_gpu_1(plkr, gtops, par);
+		printInteractions(plkr, gtops, par.topmost);
+	}
 
 	delete[] gtops;
+	delete[] pIr;
 
 	delete plkr;
 
@@ -102,6 +121,7 @@ static bool getParams(int argc, char *argv[], struct _paramP1 &opar)
 	struct _paramP1 par = {
 			DEFAULT_GPUNUM,
 			DEFAULT_TOPMOST,
+			false,
 			false,
 			false,
 			false,
@@ -122,6 +142,8 @@ static bool getParams(int argc, char *argv[], struct _paramP1 &opar)
 		string argu(argv[j]);
 		if (argu == "-g" || argu == "--gold")
 			par.gold = true;
+		else if (argu == "-A" || argu == "--alfa-beta")
+			par.abk = true;
 		else if (argu == "-t" || argu == "--alternate-grid")
 			par.alt = true;
 		else if (argu == "-G" || argu == "--gpu-num")
@@ -176,6 +198,7 @@ static void printHelp(void)
 			"   -i | --input-root      BASE Use BASE as full path and filename for .bed,.bim,.fam\n\n"
 			"   -g | --gold                 Process \"gold\" on CPU  [no]\n"
 			"   -f | --fisher-pvals         Computes Fisher P-value instead of Entropy [no]\n"
+			"   -A | --alfa-beta            Create A-B-k instance (NOT IMPLEMENTED)\n"
 			"   -G | --gpu-num         N    Use GPU number N  [0]\n"
 			"   -t | --alternate-grid       For some block sizes, use different layout during init & entropy  [no]\n"
 			"   -D | --print-diagonal       Print a few results from time to time  [no]\n"
