@@ -93,8 +93,8 @@ typedef struct _abkResultDetails
 
 
 #define		TriIndexFromRC(row,col,N)	(((N)-1)*(row)-(row)*((row)+1)/2+(col)-1)
-#define		RCFromTriIndex(idx,N,row,col)	{ float a = (float)(2*(N)-1)*(float)(2*(N)-1) - (float)(8*((idx)-(N)+1));	\\
-											  a = ((float)(2*(N)-1) - sqrtf(a))/2.0;		\\
+#define		RCFromTriIndex(idx,N,row,col)	{ float a = (float)(2*(N)-1)*(float)(2*(N)-1) - (float)(8*((idx)-(N)+1));	\
+											  a = ((float)(2*(N)-1) - sqrtf(a))/2.0;		\
 											  row = (int) ceilf(a); col = (idx) - (row) * (N) + (row) * ((row) -1) / 2; }
 
 
