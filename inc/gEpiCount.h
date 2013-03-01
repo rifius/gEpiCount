@@ -126,9 +126,13 @@ struct _paramP1
 	int		blkSzY;			// idem
 	int		maxGridBlocks;	// idem
 	FitnessFunction ffun;	// Implemented kernels
+	float	qaMissSNPs;		// Quality check max missing SNP fraction
+	float	qaMissSamp;		// Quality check max missing sample fraction
+	bool	qaRemoveMissing;// Quality check remove exceeding samples or SNPs
 };
 
 //========== Prototypes
+extern const string progVersion;
 
 extern "C" {
 float fisher_pval(int n11, int n12, int n21, int n22);

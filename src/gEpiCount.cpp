@@ -35,6 +35,10 @@
 #define		DEFAULT_GPUNUM		0
 #define		DEFAULT_BLOCK_SIDE	16
 #define		DEFAULT_MAXRESULTS	16		// In units of ONEMEGA
+#define		DEFAULT_MISS_SNPS   0.05
+#define		DEFAULT_MISS_SAMP   0.05
+
+#define		PROGNAME		"gEpiCount"
 
 static void printHelp(void);
 static bool getParams(int argc, char *argv[], struct _paramP1 &opar);
@@ -43,6 +47,8 @@ static bool getParams(int argc, char *argv[], struct _paramP1 &opar);
 int main (int argc, char *argv[]) {
 
 	struct _paramP1 par;
+
+	clog << PROGNAME << ", version: " << progVersion << endl << endl;
 
 	if (!getParams(argc, argv, par))
 		exit(3);
@@ -65,7 +71,7 @@ int main (int argc, char *argv[]) {
 //	{
 //		print_data(plkr, k, 2);
 //	}
-	plkr->checkQuality();
+	plkr->checkQuality(par.qaRemoveMissing, par.qaMissSNPs, par.qaMissSamp);
 	nSAMP = plkr->numSamples();
 
 	printf("Size of array of %d topmost interaction results: %ld (%ldMB) (+1x buffer)\n", par.topmost, 2 * par.topmost * sizeof(InteractionResult),
@@ -103,6 +109,9 @@ static bool getParams(int argc, char *argv[], struct _paramP1 &opar)
 			DEFAULT_BLOCK_SIDE,
 			DEFAULT_MAXRESULTS,
 			FFUNC_ENTROPY,
+			DEFAULT_MISS_SNPS,
+			DEFAULT_MISS_SAMP,
+			false,
 	};
 	bool ok = true;
 
@@ -132,6 +141,10 @@ static bool getParams(int argc, char *argv[], struct _paramP1 &opar)
 			par.maxGridBlocks = atoi(argv[++j]);
 		else if (argu == "--shared-memory")
 			par.shmem = true;
+		else if (argu == "--miss-snps")
+			par.qaMissSNPs = atof(argv[++j]);
+		else if (argu == "--miss-samples")
+			par.qaMissSamp = atof(argv[++j]);
 		else
 		{
 			clog << "Unknown option: " << argu << endl;
@@ -157,7 +170,7 @@ static bool getParams(int argc, char *argv[], struct _paramP1 &opar)
 
 static void printHelp(void)
 {
-	clog << "gEpiCount -i <input-root> [options]\n\n"
+	clog << PROGNAME << " -i <input-root> [options]\n\n"
 			"   -i | --input-root      BASE Use BASE as full path and filename for .bed,.bim,.fam\n\n"
 			"   -g | --gold                 Process \"gold\" on CPU  [no]\n"
 			"   -f | --fisher-pvals         Computes Fisher P-value instead of Entropy [no]\n"
@@ -168,5 +181,7 @@ static void printHelp(void)
 			"        --block-sizes     N M  Use block size (N,M)  [" << DEFAULT_BLOCK_SIDE << "," << DEFAULT_BLOCK_SIDE << "]\n"
 			"        --max-grid-area   N    Use max N x 1024 x 1024 results  [" << DEFAULT_MAXRESULTS << "]\n"
 			"        --shared-memory        Use shared memory kernel [no]\n"
+			"        --miss-snps       F    Max missing values fraction for SNPs [" << DEFAULT_MISS_SNPS << "]>\n"
+			"        --miss-samples    F    Max missing values fraction for samples  [" << DEFAULT_MISS_SAMP << "]\n"
 			<< endl;
 }
