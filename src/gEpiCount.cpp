@@ -28,7 +28,9 @@
 #include <stdlib.h>
 
 #include "../inc/gEpiCount.h"
+#include "../inc/gABKEpi.h"
 #include "proc_gold_1.h"
+#include "proc_gold_2.h"
 #include "proc_gpu.h"
 
 #define		DEFAULT_TOPMOST		1000000
