@@ -29,6 +29,7 @@
 
 #include "../inc/gEpiCount.h"
 #include "../inc/gABKEpi.h"
+#include "ABKEpiGraph.h"
 #include "proc_gold_1.h"
 #include "proc_gold_2.h"
 #include "proc_gpu.h"
@@ -86,6 +87,13 @@ int main (int argc, char *argv[]) {
 	const size_t nPairs = nSAMP * (nSAMP - 1) / 2;
 	const int nPP = ilogb((double) nPairs) + 1;
 	printf("\nThere are %ld pairs, ilogb(pairs): %d\n", nPairs, nPP);
+#ifdef		UI4ELE
+	ABKEpiGraph<int64_t, ui4> abkEG = ABKEpiGraph<int64_t, ui4>(nPairs, nPP);
+#else
+	ABKEpiGraph<int64_t, ui8> abkEG = ABKEpiGraph<int64_t, ui8>(nPairs, nPP);
+#endif
+	abkEG.precomputePairs(*plkr);
+
 	printf("Size of array of %ld blocks of %d pair results: %ld (%ldMB)\n", nPairs, nPP, nPairs * nPP * sizeof(PairInteractionResult),
 			(nPairs * nPP * sizeof(PairInteractionResult) + ONEMEGA - 1)/ONEMEGA);
 	PairInteractionResult *pIr = new PairInteractionResult[nPP * nPairs];
@@ -94,9 +102,9 @@ int main (int argc, char *argv[]) {
 	if (par.abk)
 	{
 		if (par.gold)
-			process_gold_2(plkr, nPairs, nPP, pIr, par);
+			process_gold_2(plkr, abkEG, par);
 		else
-			process_gpu_2(plkr, nPairs, nPP, pIr, par);
+			process_gpu_2(plkr, abkEG, par);
 	}
 	else
 	{

@@ -30,17 +30,18 @@
 #include "../../inc/gABKEpi.h"
 #include "../misc/Timer.h"
 #include "../proc_gpu.h"
+#include "../ABKEpiGraph.h"
 #define	DEBUG_PRINTS
 #include "setup2.h"
 
 template <typename T>
-__forceinline__ __device__ T validBitsElement(const struct _dataPointersPairsD<T> P, int idxA, int idxB, int ele, int nSNPs)
+__forceinline__ __device__ T validBitsElement(const struct _dataPointersD<T> P, int idxA, int idxB, int ele, int nSNPs)
 {
 	T	res = 0;
 	if (idxA >= nSNPs || idxB >= nSNPs)
 		return res;
-	T		*vA = P.dpt.valid + idxA;
-	T		*vB = P.dpt.valid + idxB;
+	T		*vA = P.valid + idxA;
+	T		*vB = P.valid + idxB;
 	int idxj = ele * nSNPs;
 	res = vA[idxj] & vB[idxj];								// Valid bits
 	res &= (maskElem<T>(d_mask0, ele) | maskElem<T>(d_mask1, ele));
@@ -48,13 +49,13 @@ __forceinline__ __device__ T validBitsElement(const struct _dataPointersPairsD<T
 }
 
 template <typename T>
-__forceinline__ __device__ T binaryFuncElement(const struct _dataPointersPairsD<T> P, int idxA, int idxB, int fun, int ele, int nSNPs)
+__forceinline__ __device__ T binaryFuncElement(const struct _dataPointersD<T> P, int idxA, int idxB, int fun, int ele, int nSNPs)
 {
 	T	res = 0;
 	if (idxA >= nSNPs || idxB >= nSNPs)
 		return res;
-	T		*bA = P.dpt.bits + idxA;
-	T		*bB = P.dpt.bits + idxB;
+	T		*bA = P.bits + idxA;
+	T		*bB = P.bits + idxB;
 
 	int idxj = ele * nSNPs;
 
@@ -111,8 +112,7 @@ __forceinline__ __device__ T binaryFuncElement(const struct _dataPointersPairsD<
  * other problem dimensions.
  */
 template <typename T>
-__global__ void k2_g(const struct _dataPointersPairsD<T> P, const dim3 firstG, const size_t nSNPs, const size_t nSamp,
-		const size_t nELE, const size_t nPairs, const int nResPP, PairInteractionResult *ptops)
+__global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResultDetails *pr)
 {
 	const int SAMPLES_ELEMENT = 8 * sizeof(T);
 	const int func = BFUNC_AND;
@@ -130,10 +130,10 @@ __global__ void k2_g(const struct _dataPointersPairsD<T> P, const dim3 firstG, c
 	if (idxA > idxB)
 		return;
 
-	T	c, v1b, v2b, e1b, e2b;
+	T	v1b, v2b, e1b, e2b;
 	int	sIdx, sIdy;		// Sample index in x and y
 	int pairIndex = 0;
-	int nEP = nELE * (nELE + 1) / 2;				// Number of pairs of elements
+	int nEP = P.nELE * (P.nELE + 1) / 2;				// Number of pairs of elements
 	int ni = (nEP + blockDim.x - 1) / blockDim.x;	// Number of iterations per thread
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
 //	if (threadIdx.x == 0 && threadIdx.y == 0)
@@ -149,22 +149,22 @@ __global__ void k2_g(const struct _dataPointersPairsD<T> P, const dim3 firstG, c
 		// Find element row
 		int e1, e2;
 #ifdef ALTERNATIVE_IMPLEMENTATION
-		e1 = 2*nELE - 1;
+		e1 = 2*P.nELE - 1;
 		{
-			float a = (float) e1 * (float) e1 - 8.0 * (float) (epi - nELE + 1);
+			float a = (float) e1 * (float) e1 - 8.0 * (float) (epi - P.nELE + 1);
 			a = ((float) e1 - sqrtf(a)) / 2.0;
 			e1 = (int) ceilf(a);
 		}
 		// and element column
-		e2 = epi - e1 * (nELE - 1) + (e1 * (e1 - 1)) / 2;
+		e2 = epi - e1 * (P.nELE - 1) + (e1 * (e1 - 1)) / 2;
 #else
-		ROWCOLATINDEX_V0D(epi,nELE,e1,e2);
+		ROWCOLATINDEX_V0D(epi,P.nELE,e1,e2);
 #endif
 
-		v1b = validBitsElement(P, idxA, idxB, e1, nSNPs);
-		e1b = binaryFuncElement(P, idxA, idxB, func, e1, nSNPs);
-		v2b = validBitsElement(P, idxA, idxB, e2, nSNPs);
-		e2b = binaryFuncElement(P, idxA, idxB, func, e2, nSNPs);
+		v1b = validBitsElement(P.dpt, idxA, idxB, e1, P.numSNPs);
+		e1b = binaryFuncElement(P.dpt, idxA, idxB, func, e1, P.numSNPs);
+		v2b = validBitsElement(P.dpt, idxA, idxB, e2, P.numSNPs);
+		e2b = binaryFuncElement(P.dpt, idxA, idxB, func, e2, P.numSNPs);
 
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
 //		if (threadIdx.x == 0 && threadIdx.y == 0)
@@ -182,7 +182,7 @@ __global__ void k2_g(const struct _dataPointersPairsD<T> P, const dim3 firstG, c
 			T	valval = v1b & v2b;
 			T	equ2 = equval >> 1;
 			T	valid2 = valval >> 1;
-			for(int n = 1; n < SAMPLESAMPLES_ELEMENT; n++)
+			for(int n = 1; n < SAMPLES_ELEMENT; n++)
 			{
 				covA[threadIdx.x] += __popcll(equval & equ2 & valval & val2);		// Esto esta mal.  rechequear faltan las mascaras
 				covB[threadIdx.x] += __popcll((equval ^ equ2) & valval & val2);		// Esto esta mal.  rechequear faltan las mascaras de clase
@@ -204,9 +204,9 @@ __global__ void k2_g(const struct _dataPointersPairsD<T> P, const dim3 firstG, c
 				sIdy = e1 * SAMPLES_ELEMENT + n;
 				sIdx = e2 * SAMPLES_ELEMENT + (n + bitgap) % SAMPLES_ELEMENT;
 
-				if (sIdx < nSamp && sIdy < nSamp && sIdx > sIdy)
+				if (sIdx < P.numSamples && sIdy < P.numSamples && sIdx > sIdy)
 				{
-					pairIndex = INDEXATROWCOL_V00ND(sIdy,sIdx,nSamp);
+					pairIndex = INDEXATROWCOL_V00ND(sIdy,sIdx,P.numSamples);
 					bool eqeq = ((equval & selector) == selector);
 					bool vald = ((valval & selector) == selector);
 					covA[threadIdx.x] += (vald && !eqeq && (P.pFlag[pairIndex] & P_ALPHA) == P_ALPHA) ? 1 : 0;
@@ -269,38 +269,31 @@ __global__ void k2_g(const struct _dataPointersPairsD<T> P, const dim3 firstG, c
 
 
 // Launcher of the kernel 1 function.
-template <typename T>
-__host__ static void launch_process_gpu_2(PlinkReader<T> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ppres, const struct _paramP1 &par)
+template <typename T, typename Key>
+void launch_process_gpu_2(PlinkReader<T> *pr, ABKEpiGraph<Key, T> &abkeg, const struct _paramP1 &par)
 {
-	struct _dataPointersPairsD<T>	d_PPtrs;
+	ABKInputData<T>		d_InDPT;
 	size_t	byteCounter;
 	double	totTime = 0.0f;
 
 	Timer tt;
 	CUDACHECK(cudaSetDevice(par.gpuNum),par.gpuNum);
-	byteCounter = allocSendData_device(*pr, d_PPtrs, nPairs, par);
+	byteCounter = allocSendData_device(*pr, abkeg, d_InDPT, par);
 	clog << "K2: InputData: " << byteCounter << std::endl;
 
-	// Output buffer
-	struct cudaDeviceProp dProp;
-	std::memset(&dProp,0,sizeof(dProp));
-	CUDACHECK(cudaGetDeviceProperties(&dProp,par.gpuNum),par.gpuNum);
-	clog << "K2: Device: " << par.gpuNum << " [" << dProp.name << "] " << dProp.major << "." << dProp.minor << endl;
-	size_t availMem, totalMem;
-	CUDACHECK(cudaMemGetInfo(&availMem,&totalMem),par.gpuNum);
-	int nPairsMax = availMem / (nResPP * sizeof(PairInteractionResult));
-	clog << "K2: Max Global: " << dProp.totalGlobalMem << ", Available: " << (availMem+ONEMEGA-1)/ONEMEGA << "MB. Max nPairs: " << nPairsMax << endl;
-	if (nPairsMax < nPairs)
+	ABKResultDetails	ld_abkr,	// Local copy of device pointers
+						*p_abkr,	// Pointer to device struct
+						h_abkr;		// Host struct
+	if (!computeResultBufferSize(ld_abkr, abkeg, par))
 	{
-		clog << "K2: Available Memory is not enough for " << nPairs << " pairs with " << nResPP << " results each.  Aborting." << endl << endl;
-		freeData_device(d_PPtrs, par);
+		freeData_device(d_InDPT, par);
 		return;
 	}
+	h_abkr = ld_abkr;
 
-	PairInteractionResult	*d_pir, *h_pir;
-	byteCounter += allocResults_device(&d_pir, nPairs, par);
-	allocResults_host(&h_pir, nPairs, par);
-
+	byteCounter += allocResults_device(ld_abkr, &p_abkr, par);
+	byteCounter += allocResults_host(h_abkr, par);
+	size_t availMem, totalMem;
 	CUDACHECK(cudaMemGetInfo(&availMem,&totalMem),par.gpuNum);
 	totTime += tt.stop();
 
@@ -322,7 +315,7 @@ __host__ static void launch_process_gpu_2(PlinkReader<T> *pr, const size_t nPair
 //	dim3	grid(pr->numSNPs(), pr->numSNPs());
 	dim3	grid(4,4);
 	dim3	fgr(0,0,0);
-	k2_g<T><<<grid,block,16384>>>(d_PPtrs, fgr, pr->numSNPs(), pr->numSamples(), pr->elementsSNP(), nPairs, nResPP, d_pir);
+	k2_g<T><<<grid,block,16384>>>(d_InDPT, fgr, p_abkr);
 
 #ifdef CACA
 	{
@@ -383,17 +376,21 @@ __host__ static void launch_process_gpu_2(PlinkReader<T> *pr, const size_t nPair
 
 #endif
 
-	freeData_device(d_PPtrs, par);
-	freeResults_device(*d_pir, par);
-	freeResults_host(*h_pir, par);
+	freeData_device(d_InDPT, par);
+//	freeResults_device(*d_pir, par);
+//	freeResults_host(*h_pir, par);
 
 	return;
 }
 
+void process_gpu_2(PlinkReader<ui8> *pr, ABKEpiGraph<int64_t, ui8> &abkeg, const struct _paramP1 &par)
+{
+	launch_process_gpu_2(pr, abkeg, par);
+}
 
 __host__ void process_gpu_2(PlinkReader<ui8> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par)
 {
-	launch_process_gpu_2<ui8>(pr, nPairs, nResPP, ptops, par);
+//	launch_process_gpu_2<ui8>(pr, nPairs, nResPP, ptops, par);
 }
 
 __host__ void process_gpu_2(PlinkReader<ui4> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par)

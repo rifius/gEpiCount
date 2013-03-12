@@ -30,6 +30,49 @@
 #include "../../inc/gABKEpi.h"
 #include "../proc_gpu.h"
 
+// Allocate results buffers in device
+// The struct ld_abkr is assumed to have the parameters completed previously by the
+// heuristic used to dimension buffers on device based on available memory
+int allocResults_device(const ABKResultDetails &ld_abkr, ABKResultDetails **p_abkr, const struct _paramP1 &par)
+{
+	int byteCounter = 0;
+	CUDACHECK(cudaMalloc((void**)p_abkr,sizeof(ABKResultDetails)),par.gpuNum);
+	CUDACHECK(cudaMalloc((void**)&ld_abkr.pairList,
+			  ld_abkr.nPairs * ld_abkr.dResPP * sizeof(short int)),par.gpuNum);
+	CUDACHECK(cudaMalloc((void**)&ld_abkr.selected,
+			  ld_abkr.maxSelected * sizeof(PairInteractionResult)),par.gpuNum);
+	byteCounter += sizeof(ABKResultDetails)
+			+ ld_abkr.nPairs * ld_abkr.dResPP * sizeof(short int)
+			+ ld_abkr.maxSelected * sizeof(PairInteractionResult);
+	CUDACHECK(cudaMemcpy(*p_abkr, &ld_abkr, sizeof(ABKResultDetails),cudaMemcpyHostToDevice),par.gpuNum);
+	return byteCounter;
+}
+
+int allocResults_host(ABKResultDetails &h_abkr, const struct _paramP1 &par)
+{
+	int byteCounter = 0;
+	CUDACHECK(cudaMallocHost((void**)&h_abkr.pairList,
+			  h_abkr.nPairs * h_abkr.dResPP * sizeof(short int)),par.gpuNum);
+	CUDACHECK(cudaMalloc((void**)&h_abkr.selected,
+			  h_abkr.maxSelected * sizeof(PairInteractionResult)),par.gpuNum);
+	byteCounter += h_abkr.nPairs * h_abkr.dResPP * sizeof(short int)
+				   + h_abkr.maxSelected * sizeof(PairInteractionResult);
+	return byteCounter;
+}
+
+void freeResults_device(const ABKResultDetails &ld_abkr, const ABKResultDetails *p_abkr, const struct _paramP1 &par)
+{
+	CUDACHECK(cudaFree((void*)ld_abkr.pairList),par.gpuNum);
+	CUDACHECK(cudaFree((void*)ld_abkr.selected),par.gpuNum);
+	CUDACHECK(cudaFree((void*)p_abkr),par.gpuNum);
+}
+
+void freeResults_host(const ABKResultDetails &h_abkr, const struct _paramP1 &par)
+{
+	CUDACHECK(cudaFree((void*)h_abkr.pairList),par.gpuNum);
+	CUDACHECK(cudaFree((void*)h_abkr.selected),par.gpuNum);
+}
+
 /*
  * Allocates and initialises the device buffers to hold results for
  * each invocation of the grid.

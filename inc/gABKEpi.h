@@ -29,47 +29,52 @@
 #ifndef GABKEPI_H_
 #define GABKEPI_H_
 
+#include <cmath>
 #include "gEpiCount.h"
-
-// Input and precomputed data for ABK.  Same as for counts
-// plus the flags indicating if pair is valid, alpha or beta.
-template <typename T>
-struct _dataPointersPairsD
-{
-	struct _dataPointersD<T>	dpt;
-	unsigned char 				*pFlag;
-};
 
 // Individual result for an interaction across sample pairs.
 // It provides the cover on the alpha and beta sides, and the
 // entropy / p-value [not implemented yet]
+// TODO: For now we put explicitly the SNP indexes and func,
+// but should be encoded in a single int64 to save some space and better
+// struct alignment
 typedef struct _resultP
 {
 	int		sA;		// SNP A
 	int		sB;		// SNP B
 //	int4	n;
-	float	ent;	// Entropy
+//	float	ent;	// Entropy
 	int		alphaC;	// Alpha side cover
 	int		betaC;	// Beta side cover
-	short	fun;
+	char	fun;
 } PairInteractionResult;
 
-// Current results for each grid dispatch, against which the
-// interactions are judged:
-// the value of worst cover and the array of worst cover per pair
-typedef struct _currentPairThresholds
+// For the global list of results kept in the host, we do
+// reference counting
+typedef struct _trackedResultP
 {
-	int		worstCoverAlpha;	// worst from all alpha covers
-	int		worstCoverBeta;		// worst from all beta covers
-	int		*worstCovers;		// worst for each pair
-} CurrentPairCovers;
+	PairInteractionResult	ir;
+	int		refCount;
+} TrackedPairInteractionResult;
 
-// The results for pairs.
-// Contains the mode of results (either dense bitpack or sparse list of pairs
-// (in the later case how many valid pairs), and the interaction result
+// The collection of results for a (series) of grid launches.
+// Contains a list of PairInteractionResult, with a counter of current
+// used elements, and the list of nPairs x dResPP indexes to the
+// previous list
+// In this initial version we do not keep track of reference counting
+// so once a PairInteractionResult makes it to the list, it will remain
+// there even if subsequent additions eliminate all links from pairs to
+// this particular result
+// This structure can not be passed by value to the kernel.  It
+// must be in global memory, and the counter incremented atomically.
 typedef struct _abkResultDetails
 {
-
+	short int				maxSelected;	// Capacity of the list
+	short int				currIndex;		// Current last element used
+	int						nPairs;
+	short int 				dResPP;			// How many ResPP we keep here
+	PairInteractionResult	*selected;
+	short int 				*pairList;		// Indexes per pair
 } ABKResultDetails;
 
 

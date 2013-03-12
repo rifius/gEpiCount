@@ -30,11 +30,12 @@
 #define PROC_GOLD_2_H_
 
 #include "proc_gold.h"
+#include "ABKEpiGraph.h"
 
 /////////////////////
 // Second Kernel.  Computation of per pair list
 /////////////////////
-template <typename T> void process_gold_2(PlinkReader<T> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par)
+template <typename T, typename Key> void process_gold_2(PlinkReader<T> *pr, ABKEpiGraph<Key, T> &abkEG, const struct _paramP1 &par)
 {
 	_do_preload();
 	const size_t nSNPs = pr->numSNPs();
@@ -52,18 +53,14 @@ template <typename T> void process_gold_2(PlinkReader<T> *pr, const size_t nPair
 	////////////////////////////////////////////////////
 	// Auxiliary setup
 	////////////////////////////////////////////////////
-	bool *isBetaPair = new bool[nPairs];
-	std::memset(isBetaPair, 0, nPairs * sizeof(bool));
-	bool *auxAPair = new bool[nPairs];
-	bool *auxBPair = new bool[nPairs];
-	cerr << "Aux vars: " << 3 * sizeof(bool) * nPairs << std::endl;
+	bool *isBetaPair = new bool[abkEG.nPairs()];
+	std::memset(isBetaPair, 0, abkEG.nPairs() * sizeof(bool));
+	bool *auxAPair = new bool[abkEG.nPairs()];
+	bool *auxBPair = new bool[abkEG.nPairs()];
+	cerr << "Aux vars: " << 3 * sizeof(bool) * abkEG.nPairs() << std::endl;
 
 	Timer tt;
-	std::memset(ptops, 0, nPairs * nResPP * sizeof(PairInteractionResult));
-	cerr << "Zero " << tt.stop() << std::endl;
-
 	double totTime = 0.0f;
-	tt.start();
 
 	size_t	nAlpha = 0;
 	size_t	nBeta = 0;
@@ -135,7 +132,7 @@ template <typename T> void process_gold_2(PlinkReader<T> *pr, const size_t nPair
 			totTime += ti;
 		}
 	}
-	fprintf(stderr,"AuxSetup: Total time: %g %g-%g/i.  numAlpha:%ld numBeta:%ld\n", t2.stop(), totTime, totTime/(double)nPairs, nAlpha, nBeta);
+	fprintf(stderr,"AuxSetup: Total time: %g %g-%g/i.  numAlpha:%ld numBeta:%ld\n", t2.stop(), totTime, totTime/(double)abkEG.nPairs(), nAlpha, nBeta);
 
 	//////////////////////////////////////////////////
 	// SNP - SNP interaction computation
@@ -147,7 +144,7 @@ template <typename T> void process_gold_2(PlinkReader<T> *pr, const size_t nPair
 	T *fBits = new T[nELEs];
 	std::memset(fBits, 0, nELEs * sizeof(T));
 
-#define		DEBUG_SNPS		4
+#define		DEBUG_SNPS		4	// TODO: Eliminate
 
 	size_t stepCounter = 0;
 	tt.start();
@@ -251,17 +248,13 @@ template <typename T> void process_gold_2(PlinkReader<T> *pr, const size_t nPair
 					continue;
 
 					// Compute global quality for this function
-					// Could be covAlpha / myAlpha * ee     or     covAlpha / nAlpha * ee
-					float Qalpha = (float) covAlpha * ee;
-					// Could be covBeta / myNeta * ee     or     covBeta / nBeta * ee
-					float Qbeta = (float) covBeta * ee;
 					PairInteractionResult pirX;
 					pirX.alphaC = covAlpha;
 					pirX.betaC = covBeta;
 					pirX.fun = fun;
 					pirX.sA = idxA;
 					pirX.sB = idxB;
-					pirX.ent = 0.0f;
+#ifdef NOT_NOW
 					for (size_t idxP = 0; idxP < nPairs; idxP++)
 					{
 						PairInteractionResult *LL = ptops + idxP * nResPP;
@@ -309,6 +302,7 @@ template <typename T> void process_gold_2(PlinkReader<T> *pr, const size_t nPair
 //							}
 						}
 					}
+#endif
 				}
 				stepCounter++;
 				if (stepCounter % 10000 == 0)

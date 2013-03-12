@@ -28,6 +28,7 @@
 #include "../inc/gEpiCount.h"
 #include "../inc/gABKEpi.h"
 #include "misc/Timer.h"
+#include "ABKEpiGraph.h"
 
 #define		K1_FREE_FACTOR		0.8f		// Fraction of available memory to be used in results (max)
 // Size of results computed per GPU thread
@@ -43,6 +44,23 @@ extern __device__ __constant__ 	ui8	d_mask0[CONST_MASK_MAX_SIZE];
 extern __device__ __constant__ 	ui8	d_mask1[CONST_MASK_MAX_SIZE];
 extern __device__ __constant__	IntResultPointers	resP;
 extern __shared__ count_type _sm_buffer[];
+
+// Input and precomputed data for ABK.  Same as for counts
+// plus the flags indicating if pair is valid, alpha or beta.
+template <typename T>
+class ABKInputData
+{
+public:
+	int		numPairs;
+	int		numSNPs;
+	int 	numSamples;
+	int 	nELE;
+	struct _dataPointersD<T>	dpt;
+	unsigned char 				*pFlag;
+	int		worstCoverAlpha;	// worst from all alpha covers
+	int		worstCoverBeta;		// worst from all beta covers
+	int		*worstCovers;		// worst for each pair
+};
 
 /*
  * Indices management.
@@ -170,16 +188,19 @@ template <typename T>
 __global__ void k1_count(const struct _dataPointersD<T> dptrs, IntResultPointers *ptrs, int numRes, dim3 firstG, int nSNPs, int nELE);
 
 //######## For Kernel 2 (ABK)
-void process_gpu_2(PlinkReader<ui8> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
-void process_gpu_2(PlinkReader<ui4> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
+void process_gpu_2(PlinkReader<ui8> *pr, ABKEpiGraph<int64_t, ui8> &abkeg, const struct _paramP1 &par);
+//void process_gpu_2(PlinkReader<ui8> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
+//void process_gpu_2(PlinkReader<ui4> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
 
 template <typename T>
-__global__ void k2_g(const struct _dataPointersPairsD<T> P, const dim3 firstG, const size_t nSNPs, const size_t nSamp,
+__global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const size_t nSNPs, const size_t nSamp,
 		const size_t nELE, const size_t nPairs, const int nResPP, PairInteractionResult *ptops);
+template <typename T>
+__global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResultDetails *ptr);
 
-int allocResults_device(PairInteractionResult **d_pir, int nPIR, const struct _paramP1 &par);
-int allocResults_host(PairInteractionResult **h_pir, int nPIR, const struct _paramP1 &par);
-void freeResults_device(const PairInteractionResult &h_pir, const struct _paramP1 &par);
-void freeResults_host(const PairInteractionResult &h_pir, const struct _paramP1 &par);
+int allocResults_device(const ABKResultDetails &ld_abkr, ABKResultDetails **pd_abkr, const struct _paramP1 &par);
+int allocResults_host(ABKResultDetails &h_abkr, const struct _paramP1 &par);
+void freeResults_device(const ABKResultDetails &h_abkr, const ABKResultDetails *p_abkr, const struct _paramP1 &par);
+void freeResults_host(const ABKResultDetails &h_pir, const struct _paramP1 &par);
 
 #endif /* PROC_GPU_H_ */
