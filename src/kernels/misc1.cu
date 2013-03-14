@@ -23,6 +23,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with gEpiCount.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <cuda.h>
 #include <cuda_runtime.h>
 
 #include "../../inc/gEpiCount.h"

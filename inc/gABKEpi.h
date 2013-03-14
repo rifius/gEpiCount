@@ -67,14 +67,15 @@ typedef struct _trackedResultP
 // this particular result
 // This structure can not be passed by value to the kernel.  It
 // must be in global memory, and the counter incremented atomically.
+typedef	ui2					PILindex_t;		// So this type can be changed selectively
 typedef struct _abkResultDetails
 {
-	short int				maxSelected;	// Capacity of the list
-	short int				currIndex;		// Current last element used
+	int						maxSelected;	// Capacity of the 'selected' list
+	int						currIndex;		// Current last element used
 	int						nPairs;
 	short int 				dResPP;			// How many ResPP we keep here
 	PairInteractionResult	*selected;
-	short int 				*pairList;		// Indexes per pair
+	PILindex_t 				*pairList;		// Indexes per pair
 } ABKResultDetails;
 
 

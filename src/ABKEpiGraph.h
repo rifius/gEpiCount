@@ -26,7 +26,10 @@ private:
 	int			_nPairs;
 	int			_nResPP;
 	int			*wCovers;		// Convenience array of worst covers
+	int 		_worstAC;
+	int			_worstBC;
 	unsigned char *pFlag;		// ALPHA or BETA or VALID
+	bool		dirty;			// worstCovers must be recomputed
 protected:
 	ABKEpiGraph();
 public:
@@ -56,10 +59,14 @@ ABKEpiGraph<Key, T>::ABKEpiGraph(int nPairs, int nResPP)
 {
 	this->_nPairs = nPairs;
 	this->_nResPP = nResPP;
+	this->dirty = false;
+	this->_worstAC = 0;
+	this->_worstBC = 0;
 	this->pairList = vector<list<Key> >(nPairs);
 	this->pirMap = std::map<Key, TrackedPairInteractionResult>();
 	this->wCovers = new int [nPairs];
 	this->pFlag = new unsigned char [nPairs];
+	std::memset(this->wCovers, 0, nPairs * sizeof(int));
 }
 
 template <class Key, typename T>
@@ -71,12 +78,12 @@ ABKEpiGraph<Key, T>::~ABKEpiGraph()
 //		delete x->second;
 //	}
 	this->pirMap.clear();
-//	delete this->pirMap;
+
 	for(int j = 0; j < this->_nPairs; j++)
 	{
 		this->pairList[j].clear();
 	}
-//	delete this->pairList;
+
 	delete[] this->wCovers;
 	delete[] this->pFlag;
 }
@@ -84,13 +91,13 @@ ABKEpiGraph<Key, T>::~ABKEpiGraph()
 template<class Key, typename T>
 inline int ABKEpiGraph<Key, T>::getWorstAlphaCover()
 {
-	return -1;
+	return this->_worstAC;
 }
 
 template<class Key, typename T>
 inline int ABKEpiGraph<Key, T>::getWorstBetaCover()
 {
-	return -1;
+	return this->_worstBC;
 }
 
 template<class Key, typename T>

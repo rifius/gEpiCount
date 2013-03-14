@@ -68,8 +68,8 @@ int main (int argc, char *argv[]) {
 	}
 	plkr->readData();
 
-	printf("\nElement Size: %d\n", plkr->ELEMENT_SIZE);
-	printf("Size of each Data Matrix: %ld (%ldMB)\n", plkr->DataSize(), (plkr->DataSize()+ONEMEGA-1)/ONEMEGA);
+	clog << "\nElement Size: " << plkr->ELEMENT_SIZE << endl;
+	clog << "Size of each Data Matrix: " << plkr->DataSize() << " (" << (plkr->DataSize()+ONEMEGA-1)/ONEMEGA << "Mb)" << endl;
 //	for (int k = 0; k < plkr->numSNPs() && k < 1000; k += 10)
 //	{
 //		print_data(plkr, k, 2);
@@ -77,30 +77,18 @@ int main (int argc, char *argv[]) {
 	plkr->checkQuality(par.qaRemoveMissing, par.qaMissSNPs, par.qaMissSamp);
 	nSAMP = plkr->numSamples();
 
-	printf("Size of array of %d topmost interaction results: %ld (%ldMB) (+1x buffer)\n", par.topmost, 2 * par.topmost * sizeof(InteractionResult),
-			(2 * par.topmost * sizeof(InteractionResult)+ONEMEGA-1)/ONEMEGA);
-	// For CPU, we use the array as collection buffer.  We could do similar in GPU,
-	// but we defer the actual memory management strategy to the launcher function.
-	InteractionResult *gtops = new InteractionResult[par.topmost];
-	std::memset(gtops, 0, par.topmost * sizeof(InteractionResult));
-
-	const size_t nPairs = nSAMP * (nSAMP - 1) / 2;
-	const int nPP = ilogb((double) nPairs) + 1;
-	printf("\nThere are %ld pairs, ilogb(pairs): %d\n", nPairs, nPP);
-#ifdef		UI4ELE
-	ABKEpiGraph<int64_t, ui4> abkEG = ABKEpiGraph<int64_t, ui4>(nPairs, nPP);
-#else
-	ABKEpiGraph<int64_t, ui8> abkEG = ABKEpiGraph<int64_t, ui8>(nPairs, nPP);
-#endif
-	abkEG.precomputePairs(*plkr);
-
-	printf("Size of array of %ld blocks of %d pair results: %ld (%ldMB)\n", nPairs, nPP, nPairs * nPP * sizeof(PairInteractionResult),
-			(nPairs * nPP * sizeof(PairInteractionResult) + ONEMEGA - 1)/ONEMEGA);
-	PairInteractionResult *pIr = new PairInteractionResult[nPP * nPairs];
-	std:: memset(pIr, 0 , nPP * nPairs * sizeof(PairInteractionResult));
-
 	if (par.abk)
 	{
+		const size_t nPairs = nSAMP * (nSAMP - 1) / 2;
+		const int nPP = ilogb((double) nPairs) + 1;
+		clog << "\nThere are " << nPairs << ", ilogb(nPairs): " << nPP << endl;
+#ifdef		UI4ELE
+		ABKEpiGraph<int64_t, ui4> abkEG = ABKEpiGraph<int64_t, ui4>(nPairs, nPP);
+#else
+		ABKEpiGraph<int64_t, ui8> abkEG = ABKEpiGraph<int64_t, ui8>(nPairs, nPP);
+#endif
+		abkEG.precomputePairs(*plkr);
+
 		if (par.gold)
 			process_gold_2(plkr, abkEG, par);
 		else
@@ -108,15 +96,22 @@ int main (int argc, char *argv[]) {
 	}
 	else
 	{
+		clog << "Size of array of " << par.topmost << " topmost interaction results: " << 2 * par.topmost * sizeof(InteractionResult)
+			 << " (" << (2 * par.topmost * sizeof(InteractionResult)+ONEMEGA-1)/ONEMEGA << "Mb)" << endl;
+		// For CPU, we use the array as collection buffer.  We could do similar in GPU,
+		// but we defer the actual memory management strategy to the launcher function.
+		InteractionResult *gtops = new InteractionResult[par.topmost];
+		std::memset(gtops, 0, par.topmost * sizeof(InteractionResult));
+
 		if (par.gold)
 			process_gold_1(plkr, gtops, par);
 		else
 			process_gpu_1(plkr, gtops, par);
+
 		printInteractions(plkr, gtops, par.topmost);
+		delete[] gtops;
 	}
 
-	delete[] gtops;
-	delete[] pIr;
 
 	delete plkr;
 

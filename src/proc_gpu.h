@@ -60,6 +60,7 @@ public:
 	int		worstCoverAlpha;	// worst from all alpha covers
 	int		worstCoverBeta;		// worst from all beta covers
 	int		*worstCovers;		// worst for each pair
+	unsigned int	*locks;		// To lock result list elements
 };
 
 /*
@@ -192,15 +193,26 @@ void process_gpu_2(PlinkReader<ui8> *pr, ABKEpiGraph<int64_t, ui8> &abkeg, const
 //void process_gpu_2(PlinkReader<ui8> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
 //void process_gpu_2(PlinkReader<ui4> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
 
-template <typename T>
-__global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const size_t nSNPs, const size_t nSamp,
-		const size_t nELE, const size_t nPairs, const int nResPP, PairInteractionResult *ptops);
+//template <typename T>
+//__global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const size_t nSNPs, const size_t nSamp,
+//		const size_t nELE, const size_t nPairs, const int nResPP, PairInteractionResult *ptops);
 template <typename T>
 __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResultDetails *ptr);
+__global__ void k2_initPairList(ABKResultDetails *pr);
 
 int allocResults_device(const ABKResultDetails &ld_abkr, ABKResultDetails **pd_abkr, const struct _paramP1 &par);
 int allocResults_host(ABKResultDetails &h_abkr, const struct _paramP1 &par);
 void freeResults_device(const ABKResultDetails &h_abkr, const ABKResultDetails *p_abkr, const struct _paramP1 &par);
 void freeResults_host(const ABKResultDetails &h_pir, const struct _paramP1 &par);
+
+//template <typename Key, typename T>
+//bool sendWorstCovers(const ABKEpiGraph<Key,T> &eg, const ABKInputData<T> &id, const struct _paramP1 &par);
+// Misc functions defined as templates but specific instantiation is indicated here
+//bool sendWorstCovers(const ABKEpiGraph<int64_t,ui8> &eg, const ABKInputData<ui8> &id, const struct _paramP1 &par);
+//bool initCycleResults_device(const ABKEpiGraph<int64_t,ui8> &eg, const ABKInputData<ui8> &id, const ABKResultDetails &ld_abr,
+//		ABKResultDetails *p_abkr, const struct _paramP1 &par);
+//template <typename Key, typename T>
+//bool initCycleResults_device(const ABKEpiGraph<Key,T> &eg, const ABKInputData<T> &id, const ABKResultDetails &ld_abr,
+//		ABKResultDetails *p_abkr, const struct _paramP1 &par);
 
 #endif /* PROC_GPU_H_ */

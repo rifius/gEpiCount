@@ -48,6 +48,8 @@ __host__ int allocSendData_device(PlinkReader<T> &pr, ABKEpiGraph<Key, T> &abkEG
 	nBytes += dInDPT.numPairs;
 	CUDACHECK(cudaMalloc(&dInDPT.worstCovers,dInDPT.numPairs*sizeof(int)),par.gpuNum);
 	nBytes += dInDPT.numPairs*sizeof(int);
+	CUDACHECK(cudaMalloc(&dInDPT.locks,dInDPT.numPairs*sizeof(unsigned int)),par.gpuNum);
+	nBytes += dInDPT.numPairs*sizeof(unsigned int);
 
 	CUDACHECK(cudaMemcpy(dInDPT.pFlag,abkEG.getPairFlags(),dInDPT.numPairs*sizeof(unsigned char),cudaMemcpyHostToDevice),par.gpuNum);
 
@@ -59,6 +61,8 @@ __host__ void freeData_device(ABKInputData<T> &dInDPT, const struct _paramP1 &pa
 {
 	freeData_device(dInDPT.dpt, par);
 	CUDACHECK(cudaFree(dInDPT.pFlag),par.gpuNum);
+	CUDACHECK(cudaFree(dInDPT.worstCovers),par.gpuNum);
+	CUDACHECK(cudaFree(dInDPT.locks),par.gpuNum);
 }
 
 template <typename T, typename Key>
@@ -73,29 +77,66 @@ __host__ bool computeResultBufferSize(ABKResultDetails &abkrd, ABKEpiGraph<Key, 
 	CUDACHECK(cudaMemGetInfo(&availMem,&totalMem),par.gpuNum);
 
 	// How many times does a single interaction result index for all pairs fit ?
-	int nDevPLength = availMem / (abkEG.nPairs() * sizeof(short int));
+	int nDevPLength = availMem / (abkEG.nPairs() * sizeof(PILindex_t));
 	if (nDevPLength < 1)
 	{
 		clog << "K2: Insufficient memory on device even for a single edge per pair" << std::endl;
 		return false;
 	}
-	int listn = (availMem - nDevPLength * abkEG.nPairs() * sizeof(short int)) / sizeof(PairInteractionResult);
+	int listn = (availMem - nDevPLength * abkEG.nPairs() * sizeof(PILindex_t)) / sizeof(PairInteractionResult);
 	while (listn < MAX_ABKRES_NBR && nDevPLength > MIN_LISTN_PP)
 	{
 		nDevPLength--;
-		listn = (availMem - nDevPLength * abkEG.nPairs() * sizeof(short int)) / sizeof(PairInteractionResult);
+		listn = (availMem - nDevPLength * abkEG.nPairs() * sizeof(PILindex_t)) / sizeof(PairInteractionResult);
 	}
 	if (nDevPLength > abkEG.nResPP())
-	{
 		nDevPLength = abkEG.nResPP();
-	}
-	clog << "K2: Memory on device: Global:" << dProp.totalGlobalMem << ", Available: " << (availMem+ONEMEGA-1)/ONEMEGA << "Mb" << endl;
-	clog << "K2: ListSize(pair): " << nDevPLength << " ResultListSize: " << listn << endl;
+	if (listn > MAX_ABKRES_NBR)
+		listn = MAX_ABKRES_NBR;
+
+	clog << "K2: Memory on device: Global:" << (dProp.totalGlobalMem+ONEMEGA-1)/ONEMEGA << "Mb, Available: " << (availMem+ONEMEGA-1)/ONEMEGA << "Mb" << endl;
+	clog << "K2: ListSize(pair): " << nDevPLength << " Needed: " << (nDevPLength*abkEG.nPairs()*sizeof(PILindex_t)+ONEMEGA-1)/ONEMEGA << "Mb" << endl;
+	clog << "K2: ResultListSize: " << listn << " Needed: " << (listn*sizeof(PairInteractionResult)+ONEMEGA-1)/ONEMEGA << "Mb" << endl;
 	abkrd.maxSelected = listn;
 	abkrd.dResPP = nDevPLength;
 	abkrd.currIndex = 0;
 	abkrd.nPairs = abkEG.nPairs();
 	return true;
 }
+
+// Can not reside on another .cu file
+template <typename T, typename Key>
+__host__ bool sendWorstCovers(ABKEpiGraph<Key,T> &eg, ABKInputData<T> &id, const struct _paramP1 &par)
+{
+	CUDACHECK(cudaMemcpy(id.worstCovers,eg.getWorstCovers(),eg.nPairs()*sizeof(int),cudaMemcpyHostToDevice),par.gpuNum);
+	id.worstCoverAlpha = eg.getWorstAlphaCover();
+	id.worstCoverBeta = eg.getWorstBetaCover();
+	return false;
+}
+
+// Function to initialise the current launch of grid.
+// It manages initialisation of the pairList on device, clears the (already copied back) array of results
+// on device, initialises members of the structure for results.
+template <typename T, typename Key>
+__host__ bool initCycleResults_device(const ABKEpiGraph<Key,T> &eg, const ABKInputData<T> &id, const ABKResultDetails &ld_abr,
+		ABKResultDetails *p_abkr, const struct _paramP1 &par)
+{
+#define	HERE_BLOCK_DIM	8
+#define	HERE_GRID_DIM	256
+	Timer tt;
+//	// Dispatch init kernel
+//	dim3 block(HERE_BLOCK_DIM,1,1), grid(HERE_GRID_DIM,1,1);
+//	k2_initPairList<<<grid,block,16384>>>(p_abkr);
+	// Clear results array on device
+	CUDACHECK(cudaMemset(ld_abr.selected,0,ld_abr.maxSelected*sizeof(PairInteractionResult)),par.gpuNum);
+	CUDACHECK(cudaMemset(ld_abr.pairList,0xff,ld_abr.nPairs*ld_abr.dResPP*sizeof(PILindex_t)),par.gpuNum);
+	CUDACHECK(cudaMemset(id.locks,0xff,id.numPairs*sizeof(unsigned int)),par.gpuNum);
+	CUDACHECK(cudaDeviceSynchronize(),par.gpuNum);
+	clog << "K2: initCycle " << tt.stop() << "sec. " << p_abkr << endl;
+#undef 	HERE_BLOCK_DIM
+#undef	HERE_GRID_DIM
+	return true;
+}
+
 
 #endif /* SETUP2_H_ */

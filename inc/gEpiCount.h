@@ -41,6 +41,7 @@
 
 typedef unsigned int   			ui4;
 typedef unsigned long long int  ui8;
+typedef unsigned short			ui2;
 
 // These two must be consistently defined with the same base type
 //typedef short int		count_type;

@@ -26,6 +26,7 @@
  */
 
 #include <cuda.h>
+#include <device_functions.h>
 
 #include "../../inc/gABKEpi.h"
 #include "../misc/Timer.h"
@@ -35,7 +36,8 @@
 #include "setup2.h"
 
 template <typename T>
-__forceinline__ __device__ T validBitsElement(const struct _dataPointersD<T> P, int idxA, int idxB, int ele, int nSNPs)
+//__forceinline__
+__device__ T validBitsElement(const struct _dataPointersD<T> P, int idxA, int idxB, int ele, int nSNPs)
 {
 	T	res = 0;
 	if (idxA >= nSNPs || idxB >= nSNPs)
@@ -49,7 +51,8 @@ __forceinline__ __device__ T validBitsElement(const struct _dataPointersD<T> P, 
 }
 
 template <typename T>
-__forceinline__ __device__ T binaryFuncElement(const struct _dataPointersD<T> P, int idxA, int idxB, int fun, int ele, int nSNPs)
+//__forceinline__
+__device__ T binaryFuncElement(const struct _dataPointersD<T> P, int idxA, int idxB, int fun, int ele, int nSNPs)
 {
 	T	res = 0;
 	if (idxA >= nSNPs || idxB >= nSNPs)
@@ -121,6 +124,9 @@ __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResult
 	int intIdx = blockIdx.y * gridDim.x + blockIdx.x;
 	int __shared__ *covA;
 	int __shared__ *covB;
+	int __shared__ myResIndex;
+	int __shared__ coverAlpha;
+	int __shared__ coverBeta;
 
 	covA = _sm_buffer;
 	covB = covA + blockDim.x * blockDim.y;
@@ -134,7 +140,7 @@ __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResult
 	int	sIdx, sIdy;		// Sample index in x and y
 	int pairIndex = 0;
 	int nEP = P.nELE * (P.nELE + 1) / 2;				// Number of pairs of elements
-	int ni = (nEP + blockDim.x - 1) / blockDim.x;	// Number of iterations per thread
+	int ni = (nEP + blockDim.x - 1) / blockDim.x;		// Number of iterations per thread
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
 //	if (threadIdx.x == 0 && threadIdx.y == 0)
 //		printf("B:%d,%d/%d(%dx%d) T:%d,%d/%d(%dx%d) Int:%d nEP:%d  ni:%d\n", blockIdx.x, blockIdx.y, gridDim.x * gridDim.y, gridDim.x, gridDim.y,
@@ -148,18 +154,7 @@ __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResult
 			break;
 		// Find element row
 		int e1, e2;
-#ifdef ALTERNATIVE_IMPLEMENTATION
-		e1 = 2*P.nELE - 1;
-		{
-			float a = (float) e1 * (float) e1 - 8.0 * (float) (epi - P.nELE + 1);
-			a = ((float) e1 - sqrtf(a)) / 2.0;
-			e1 = (int) ceilf(a);
-		}
-		// and element column
-		e2 = epi - e1 * (P.nELE - 1) + (e1 * (e1 - 1)) / 2;
-#else
 		ROWCOLATINDEX_V0D(epi,P.nELE,e1,e2);
-#endif
 
 		v1b = validBitsElement(P.dpt, idxA, idxB, e1, P.numSNPs);
 		e1b = binaryFuncElement(P.dpt, idxA, idxB, func, e1, P.numSNPs);
@@ -215,7 +210,7 @@ __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResult
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
 //					if (threadIdx.x == 0 && threadIdx.y == 0)
 //					if (threadIdx.x < 3 && intIdx == 1)
-//						printf("\t%d\t%d,%d\tr:%d,c:%d  Pi %d  %d[%d] %x, T %d\n", intIdx, e1, e2, sIdy, sIdx, pairIndex, eqeq, vald, P.pFlag[pairIndex], threadIdx.x);
+//						printf("\t%d\t%d,%d\tr:%d,c:%d  Pi %d  %d[%d] fl:%x, th %d\n", intIdx, e1, e2, sIdy, sIdx, pairIndex, eqeq, vald, P.pFlag[pairIndex], threadIdx.x);
 #endif
 
 				}
@@ -231,39 +226,150 @@ __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResult
 //	if (threadIdx.x < 3)
 //		printf("Interaction:[%d,%d:%d] cA:%d cB:%d    %dx%d,&%p&%p T%d\n", idxA, idxB, intIdx, covA[threadIdx.x], covB[threadIdx.x],
 //				blockDim.x, blockDim.y, &(covA[threadIdx.x]), &(covB[threadIdx.x]), threadIdx.x);
+//	printf("ABKResultDetails: %p, CI:%p, wcA %d, wcB %d\n", pr, &(pr->currIndex), P.worstCoverAlpha, P.worstCoverBeta);
 #endif
 
-	// TODO: This could be done with an atomicAdd()
+	// TODO: This collection could be done with an atomicAdd()
 	__syncthreads();
 	if (threadIdx.x == 0 && threadIdx.y == 0)
 	{
-		int cA = 0;
-		int cB = 0;
+		coverAlpha = 0;
+		coverBeta = 0;
 		int upp = min(blockDim.x * blockDim.y, nEP);
 		for (int j = 0; j < upp; j++)
 		{
-			cA += covA[j];
-			cB += covB[j];
+			coverAlpha += covA[j];
+			coverBeta += covB[j];
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
-//			printf("%d(%d,%d)   %d   +%d,%d\t+%d,%d\n", j, threadIdx.x, threadIdx.y, intIdx, covA[j], cA, covB[j], cB);
+//			printf("%d(%d,%d)   %d   +%d,%d\t+%d,%d\n", j, threadIdx.x, threadIdx.y, intIdx, covA[j], coverAlpha, covB[j], coverBeta);
 #endif
 		}
-		for (int j = 0; j < upp; j++)
-		{
-			covA[j] = cA;
-			covB[j] = cB;
-		}
+//		for (int j = 0; j < upp; j++)
+//		{
+//			covA[j] = cA;
+//			covB[j] = cB;
+//		}
 
-		// At this point we have the
+		// At this point we have the final covers.  If better than worse then we store it
+		if (coverAlpha > P.worstCoverAlpha || coverBeta > P.worstCoverBeta)
+		{
+			myResIndex = atomicAdd((int *)&(pr->currIndex), 1);
+			pr->selected[myResIndex].alphaC = coverAlpha;
+			pr->selected[myResIndex].betaC = coverBeta;
+			pr->selected[myResIndex].fun = func;
+			pr->selected[myResIndex].sA = idxA;
+			pr->selected[myResIndex].sB = idxB;
+		}
+		else
+			myResIndex = -1;
 
 	}
 	__syncthreads();
 
+	// myResIndex, coverAlpha, coverBeta should be available in all threads now.
+
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
-	if (threadIdx.x == 0 && threadIdx.y == 0)
-		printf("Interaction:[%d,%d:%d] cA:%d cB:%d\n", idxA, idxB, intIdx, covA[threadIdx.x], covB[threadIdx.x]);
+//	if (threadIdx.x == 0 && threadIdx.y == 0)
+//	if (threadIdx.x < 4 && threadIdx.y < 4)
+//		printf("Interaction:[%d,%d:%d] cA:%d cB:%d rIdx:%d\n", idxA, idxB, intIdx, coverAlpha, coverBeta, myResIndex);
+//	__syncthreads();
 #endif
 
+	// Finish block if nothing to do
+	if (myResIndex < 0 || myResIndex >= pr->maxSelected - 1)
+		return;
+
+	covA[threadIdx.x] = 0;
+	covB[threadIdx.x] = 0;
+
+	for (int iter = 0; iter < ni; iter++)
+	{
+		int epi = iter * blockDim.x + threadIdx.x;	// element pair index this thread
+		if (epi >= nEP)
+			break;
+		// Find element row
+		int e1, e2;
+		ROWCOLATINDEX_V0D(epi,P.nELE,e1,e2);
+
+		v1b = validBitsElement(P.dpt, idxA, idxB, e1, P.numSNPs);
+		e1b = binaryFuncElement(P.dpt, idxA, idxB, func, e1, P.numSNPs);
+		v2b = validBitsElement(P.dpt, idxA, idxB, e2, P.numSNPs);
+		e2b = binaryFuncElement(P.dpt, idxA, idxB, func, e2, P.numSNPs);
+
+		for (int bitgap = 0; bitgap < SAMPLES_ELEMENT; bitgap++)
+		{
+			T	equval = (~(e1b ^ e2b));
+			T	valval = v1b & v2b;
+			T	selector = (T) 0x1;
+			for (int n = 0; n < SAMPLES_ELEMENT; n++)
+			{
+				sIdy = e1 * SAMPLES_ELEMENT + n;
+				sIdx = e2 * SAMPLES_ELEMENT + (n + bitgap) % SAMPLES_ELEMENT;
+
+				if (sIdx < P.numSamples && sIdy < P.numSamples && sIdx > sIdy)
+				{
+					pairIndex = INDEXATROWCOL_V00ND(sIdy,sIdx,P.numSamples);
+					bool eqeq = ((equval & selector) == selector);
+					bool vald = ((valval & selector) == selector);
+					bool a = ((P.pFlag[pairIndex] & P_ALPHA == P_ALPHA) && !eqeq && (coverAlpha > P.worstCovers[pairIndex])) && vald;
+//					bool a = (P.pFlag[pairIndex] & P_VALID == P_VALID) && vald;	// Should not need to do this, valid samples considered in masks !
+//					&&
+//							(((P.pFlag[pairIndex] & P_ALPHA == P_ALPHA) && !eqeq && (coverAlpha > P.worstCovers[pairIndex])) ||
+//							 ((P.pFlag[pairIndex] & P_ALPHA == 0) && eqeq && (coverBeta > P.worstCovers[pairIndex])));
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//					printf("\t%d\t%d,%d\tr:%d,c:%d  Pi %d  =%dv[%d] fl:%x, th %d a:%d\n", intIdx, e1, e2, sIdy, sIdx, pairIndex,
+//							eqeq, vald, P.pFlag[pairIndex], threadIdx.x, a);
+#endif
+					if (a)
+					{
+						unsigned int mmm = 0xffffffff;	// Signals "empty" / unlocked
+						// There will be no interference from threads of this block, but there may be from threads of another
+						// block.  We use as Id the interaction index.
+						unsigned int nnw = intIdx;
+						unsigned int old = 0;
+						while (old != mmm)
+						{
+							old = atomicCAS(P.locks+pairIndex,mmm,nnw);
+						}
+						int pilIdx = pairIndex * pr->dResPP;
+						bool b = true;
+						for (int q = 0; b && q < pr->dResPP; q++)
+						{
+							if (pr->pairList[pilIdx+q] == 0xffff)	// Signals empty
+							{
+								pr->pairList[pilIdx+q] = myResIndex;
+								b = false;
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//								if (threadIdx.x == 0 && threadIdx.y == 0)
+//									printf("rIdx:%3d pairIdx:%6d  q:%2d\n", myResIndex, pairIndex, q);
+#endif
+							}
+							covA[threadIdx.x]++;
+						}
+						// Turn off the lock
+						old = atomicExch(P.locks+pairIndex,mmm);
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//						assert(b ? 0 : 1);
+#endif
+
+					}
+
+				}
+				selector <<= 1;
+			}
+			e2b = rotr1(e2b);
+			v2b = rotr1(v2b);
+		}
+	}
+
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//	__syncthreads();
+//	if (threadIdx.x == 0 && threadIdx.y == 0)
+//	if (threadIdx.x < 4 && threadIdx.y < 4)
+	if (covA[threadIdx.x] > 0)
+		printf("T(%d,%d) Interaction:[%d,%d:%d] cA:%d cB:%d rIdx:%d myPairs:%d\n", threadIdx.x, threadIdx.y, idxA, idxB, intIdx,
+				coverAlpha, coverBeta, myResIndex, covA[threadIdx.x]);
+#endif
 }
 #undef	DEBUG_PRINTS
 
@@ -315,6 +421,11 @@ void launch_process_gpu_2(PlinkReader<T> *pr, ABKEpiGraph<Key, T> &abkeg, const 
 //	dim3	grid(pr->numSNPs(), pr->numSNPs());
 	dim3	grid(4,4);
 	dim3	fgr(0,0,0);
+
+	initCycleResults_device<T,Key>(abkeg, d_InDPT, ld_abkr, p_abkr, par);
+	clog << endl;
+	sendWorstCovers(abkeg,d_InDPT,par);
+	clog << endl;
 	k2_g<T><<<grid,block,16384>>>(d_InDPT, fgr, p_abkr);
 
 #ifdef CACA
@@ -376,9 +487,9 @@ void launch_process_gpu_2(PlinkReader<T> *pr, ABKEpiGraph<Key, T> &abkeg, const 
 
 #endif
 
+	freeResults_host(h_abkr, par);
+	freeResults_device(ld_abkr, p_abkr, par);
 	freeData_device(d_InDPT, par);
-//	freeResults_device(*d_pir, par);
-//	freeResults_host(*h_pir, par);
 
 	return;
 }
