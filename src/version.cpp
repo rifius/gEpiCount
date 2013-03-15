@@ -1,5 +1,5 @@
 #include	<string>
 #include	"../inc/gEpiCount.h"
 
-const string progVersion = "initial-epi-20130227-5-g26ab495";
+const string progVersion = "initial-epi-20130227-6-gaa5e187";
 

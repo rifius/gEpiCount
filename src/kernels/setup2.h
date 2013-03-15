@@ -41,6 +41,7 @@ __host__ int allocSendData_device(PlinkReader<T> &pr, ABKEpiGraph<Key, T> &abkEG
 	dInDPT.numSNPs = pr.numSNPs();
 	dInDPT.numSamples = pr.numSamples();
 	dInDPT.numPairs = abkEG.nPairs();
+//	dInDPT.nEP = dInDPT.nELE * (dInDPT.nELE + 1) / 2;				// Number of pairs of elements
 	int nBytes = allocSendData_device(pr, dInDPT.dpt, par);
 
 	// TODO: Probably needs to change layout for coalescing

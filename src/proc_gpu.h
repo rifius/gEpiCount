@@ -51,16 +51,21 @@ template <typename T>
 class ABKInputData
 {
 public:
+//	const int 	SAMPLES_ELEMENT;
 	int		numPairs;
 	int		numSNPs;
 	int 	numSamples;
 	int 	nELE;
-	struct _dataPointersD<T>	dpt;
-	unsigned char 				*pFlag;
+//	int		nEP;				// Number of element pairs. Auxiliary
+//	int		nIter;				// Number of iterations per thread.  Auxiliary
 	int		worstCoverAlpha;	// worst from all alpha covers
 	int		worstCoverBeta;		// worst from all beta covers
+	struct _dataPointersD<T>	dpt;
+	unsigned char 				*pFlag;
 	int		*worstCovers;		// worst for each pair
 	unsigned int	*locks;		// To lock result list elements
+
+//	ABKInputData(): SAMPLES_ELEMENT(8 * sizeof(T)) {};
 };
 
 /*

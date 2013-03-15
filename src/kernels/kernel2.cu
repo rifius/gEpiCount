@@ -34,66 +34,7 @@
 #include "../ABKEpiGraph.h"
 #define	DEBUG_PRINTS
 #include "setup2.h"
-
-template <typename T>
-//__forceinline__
-__device__ T validBitsElement(const struct _dataPointersD<T> P, int idxA, int idxB, int ele, int nSNPs)
-{
-	T	res = 0;
-	if (idxA >= nSNPs || idxB >= nSNPs)
-		return res;
-	T		*vA = P.valid + idxA;
-	T		*vB = P.valid + idxB;
-	int idxj = ele * nSNPs;
-	res = vA[idxj] & vB[idxj];								// Valid bits
-	res &= (maskElem<T>(d_mask0, ele) | maskElem<T>(d_mask1, ele));
-	return res;
-}
-
-template <typename T>
-//__forceinline__
-__device__ T binaryFuncElement(const struct _dataPointersD<T> P, int idxA, int idxB, int fun, int ele, int nSNPs)
-{
-	T	res = 0;
-	if (idxA >= nSNPs || idxB >= nSNPs)
-		return res;
-	T		*bA = P.bits + idxA;
-	T		*bB = P.bits + idxB;
-
-	int idxj = ele * nSNPs;
-
-	switch(fun)
-	{
-	case BFUNC_AND:
-		res = (bA[idxj] & bB[idxj]);
-//		cc[CLASS0][BFUNC_AND] += __popcll(c & v & m0);
-//		cc[CLASS1][BFUNC_AND] += __popcll(c & v & m1);
-		break;
-	case BFUNC_NAND:
-		res = ((~bA[idxj]) & bB[idxj]);
-//		cc[CLASS0][BFUNC_NAND] += __popcll(c & v & m0);
-//		cc[CLASS1][BFUNC_NAND] += __popcll(c & v & m1);
-		break;
-	case BFUNC_ANDN:
-		res = (bA[idxj] & (~bB[idxj]));
-//		cc[CLASS0][BFUNC_ANDN] += __popcll(c & v & m0);
-//		cc[CLASS1][BFUNC_ANDN] += __popcll(c & v & m1);
-		break;
-	case BFUNC_NANDN:	// (implemented as ~(a | b)
-		res = (~(bA[idxj] | bB[idxj]));
-//		cc[CLASS0][BFUNC_NANDN] += __popcll(c & v & m0);
-//		cc[CLASS1][BFUNC_NANDN] += __popcll(c & v & m1);
-		break;
-	case BFUNC_XOR:
-		res = (bA[idxj] ^ bB[idxj]);
-//		cc[CLASS0][BFUNC_XOR] += __popcll(c & v & m0);
-//		cc[CLASS1][BFUNC_XOR] += __popcll(c & v & m1);
-		break;
-	default:
-		break;
-	}
-	return res;
-}
+#include "ancillary2.h"
 
 /*
  * This first kernel will compute the interaction contribution to each sample pair,
@@ -371,10 +312,328 @@ __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResult
 				coverAlpha, coverBeta, myResIndex, covA[threadIdx.x]);
 #endif
 }
-#undef	DEBUG_PRINTS
+
+//################################################################################################################
+//################################################################################################################
+//################################################################################################################
+//################################################################################################################
+//################################################################################################################
+template <typename T, class Funct>
+__device__ void k2_macro(const ABKInputData<T> P, int idxA, int idxB, int boolfunc, const ABKResultDetails *pr, Funct op)
+{
+	const int SAMPLES_ELEMENT = 8 * sizeof(T);
+
+	if (idxA > idxB)
+		return;
+
+	T	v1b, v2b, e1b, e2b;
+	int	sIdx, sIdy;		// Sample index in x and y
+	int pairIndex = 0;
+	const int nEP = P.nELE * (P.nELE + 1) / 2;					// Number of pairs of elements
+	const int nIter = (nEP + blockDim.x - 1) / blockDim.x;		// Number of iterations per thread
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//	if (threadIdx.x == 0 && threadIdx.y == 0)
+//		printf("B:%d,%d/%d(%dx%d) T:%d,%d/%d(%dx%d) Int:%d nEP:%d  ni:%d\n", blockIdx.x, blockIdx.y, gridDim.x * gridDim.y, gridDim.x, gridDim.y,
+//				threadIdx.x, threadIdx.y, blockDim.x*blockDim.y, blockDim.x, blockDim.y, intIdx, nEP, ni);
+#endif
+
+#pragma unroll
+	for (int iter = 0; iter < nIter; iter++)
+	{
+		int epi = iter * blockDim.x + threadIdx.x;	// element pair index this thread
+		if (epi >= nEP)
+			break;
+		// Find element row
+		int e1, e2;
+		ROWCOLATINDEX_V0D(epi,P.nELE,e1,e2);
+
+		v1b = validBitsElement(P.dpt, idxA, idxB, e1, P.numSNPs);
+		e1b = binaryFuncElement(P.dpt, idxA, idxB, boolfunc, e1, P.numSNPs);
+		v2b = validBitsElement(P.dpt, idxA, idxB, e2, P.numSNPs);
+		e2b = binaryFuncElement(P.dpt, idxA, idxB, boolfunc, e2, P.numSNPs);
+
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//		if (threadIdx.x == 0 && threadIdx.y == 0)
+//		{
+//			T m11 = maskElem<T>(d_mask1, e1);
+//			T m12 = maskElem<T>(d_mask1, e2);
+//			printf("[%d,%d:%d]\t%d->%d,%d:\t%lx/%lx(%lx)\t%lx/%lx(%lx), T %d\n", idxA, idxB, intIdx, epi, e1, e2, e1b, v1b, m11, e2b, v2b, m12, threadIdx.x);
+//		}
+#endif
+
+#pragma unroll
+		for (int bitgap = 0; bitgap < SAMPLES_ELEMENT; bitgap++)
+		{
+
+			T	equval = (~(e1b ^ e2b));
+			T	valval = v1b & v2b;
+			T	selector = (T) 0x1;
+			for (int n = 0; n < SAMPLES_ELEMENT; n++)
+			{
+				sIdy = e1 * SAMPLES_ELEMENT + n;
+				sIdx = e2 * SAMPLES_ELEMENT + (n + bitgap) % SAMPLES_ELEMENT;
+
+				if (sIdx < P.numSamples && sIdy < P.numSamples && sIdx > sIdy)
+				{
+					pairIndex = INDEXATROWCOL_V00ND(sIdy,sIdx,P.numSamples);
+					bool eqeq = ((equval & selector) == selector);
+					bool vald = ((valval & selector) == selector);
+
+					//////////////// Functor
+					op(vald, eqeq, ((P.pFlag[pairIndex] & P_ALPHA) == P_ALPHA), pairIndex, P);
+
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//					if (threadIdx.x == 0 && threadIdx.y == 0)
+//						printf("\t%d\t%d,%d\tr:%d,c:%d  Pi %d  %d[%d] fl:%x, th %d\n", intIdx, e1, e2, sIdy, sIdx, pairIndex, eqeq, vald, P.pFlag[pairIndex], threadIdx.x);
+#endif
+				}
+				selector <<= 1;
+			}
+			e2b = rotr1(e2b);
+			v2b = rotr1(v2b);
+		}
+	}
+}
+
+#ifdef POPO
+	// Finish block if nothing to do
+	if (myResIndex < 0 || myResIndex >= pr->maxSelected - 1)
+		return;
+
+	covA[threadIdx.x] = 0;
+	covB[threadIdx.x] = 0;
+
+	for (int iter = 0; iter < ni; iter++)
+	{
+		int epi = iter * blockDim.x + threadIdx.x;	// element pair index this thread
+		if (epi >= nEP)
+			break;
+		// Find element row
+		int e1, e2;
+		ROWCOLATINDEX_V0D(epi,P.nELE,e1,e2);
+
+		v1b = validBitsElement(P.dpt, idxA, idxB, e1, P.numSNPs);
+		e1b = binaryFuncElement(P.dpt, idxA, idxB, func, e1, P.numSNPs);
+		v2b = validBitsElement(P.dpt, idxA, idxB, e2, P.numSNPs);
+		e2b = binaryFuncElement(P.dpt, idxA, idxB, func, e2, P.numSNPs);
+
+		for (int bitgap = 0; bitgap < SAMPLES_ELEMENT; bitgap++)
+		{
+			T	equval = (~(e1b ^ e2b));
+			T	valval = v1b & v2b;
+			T	selector = (T) 0x1;
+			for (int n = 0; n < SAMPLES_ELEMENT; n++)
+			{
+				sIdy = e1 * SAMPLES_ELEMENT + n;
+				sIdx = e2 * SAMPLES_ELEMENT + (n + bitgap) % SAMPLES_ELEMENT;
+
+				if (sIdx < P.numSamples && sIdy < P.numSamples && sIdx > sIdy)
+				{
+					pairIndex = INDEXATROWCOL_V00ND(sIdy,sIdx,P.numSamples);
+					bool eqeq = ((equval & selector) == selector);
+					bool vald = ((valval & selector) == selector);
+
+					// Functor
 
 
-// Launcher of the kernel 1 function.
+					bool a = ((P.pFlag[pairIndex] & P_ALPHA == P_ALPHA) && !eqeq && (coverAlpha > P.worstCovers[pairIndex])) && vald;
+//					bool a = (P.pFlag[pairIndex] & P_VALID == P_VALID) && vald;	// Should not need to do this, valid samples considered in masks !
+//					&&
+//							(((P.pFlag[pairIndex] & P_ALPHA == P_ALPHA) && !eqeq && (coverAlpha > P.worstCovers[pairIndex])) ||
+//							 ((P.pFlag[pairIndex] & P_ALPHA == 0) && eqeq && (coverBeta > P.worstCovers[pairIndex])));
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//					printf("\t%d\t%d,%d\tr:%d,c:%d  Pi %d  =%dv[%d] fl:%x, th %d a:%d\n", intIdx, e1, e2, sIdy, sIdx, pairIndex,
+//							eqeq, vald, P.pFlag[pairIndex], threadIdx.x, a);
+#endif
+					if (a)
+					{
+						unsigned int mmm = 0xffffffff;	// Signals "empty" / unlocked
+						// There will be no interference from threads of this block, but there may be from threads of another
+						// block.  We use as Id the interaction index.
+						unsigned int nnw = intIdx;
+						unsigned int old = 0;
+						while (old != mmm)
+						{
+							old = atomicCAS(P.locks+pairIndex,mmm,nnw);
+						}
+						int pilIdx = pairIndex * pr->dResPP;
+						bool b = true;
+						for (int q = 0; b && q < pr->dResPP; q++)
+						{
+							if (pr->pairList[pilIdx+q] == 0xffff)	// Signals empty
+							{
+								pr->pairList[pilIdx+q] = myResIndex;
+								b = false;
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//								if (threadIdx.x == 0 && threadIdx.y == 0)
+//									printf("rIdx:%3d pairIdx:%6d  q:%2d\n", myResIndex, pairIndex, q);
+#endif
+							}
+							covA[threadIdx.x]++;
+						}
+						// Turn off the lock
+						old = atomicExch(P.locks+pairIndex,mmm);
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//						assert(b ? 0 : 1);
+#endif
+
+					}
+
+				}
+				selector <<= 1;
+			}
+			e2b = rotr1(e2b);
+			v2b = rotr1(v2b);
+		}
+	}
+
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//	__syncthreads();
+//	if (threadIdx.x == 0 && threadIdx.y == 0)
+//	if (threadIdx.x < 4 && threadIdx.y < 4)
+	if (covA[threadIdx.x] > 0)
+		printf("T(%d,%d) Interaction:[%d,%d:%d] cA:%d cB:%d rIdx:%d myPairs:%d\n", threadIdx.x, threadIdx.y, idxA, idxB, intIdx,
+				coverAlpha, coverBeta, myResIndex, covA[threadIdx.x]);
+#endif
+}
+
+#endif		// POPO
+
+template<typename T>
+class CoverCalc
+{
+	int *cover;
+public:
+	__device__ CoverCalc()
+	{
+		cover = (int *)_sm_buffer + 2*(threadIdx.y*blockDim.x+threadIdx.x);
+		cover[0] = 0;
+		cover[1] = 0;
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//		printf("th(%d,%d)\tbl(%d,%d)\t%p %p %p\n", threadIdx.x, threadIdx.y, blockIdx.x, blockIdx.y, cover, &cover[0], &cover[1]);
+#endif
+	}
+	__device__ void operator() (bool va, bool eq, bool isAlpha, int pairIndex, const ABKInputData<T> P) const
+	{
+		cover[0] += (va && (!eq) && isAlpha) ? 1 : 0;
+		cover[1] += (va && eq && (!isAlpha)) ? 1 : 0;
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//		printf("th(%d,%d)\tbl(%d,%d)\tpi:%d %d %d\n", threadIdx.x, threadIdx.y, blockIdx.x, blockIdx.y, pairIndex, cover[0], cover[1]);
+#endif
+	}
+};
+
+template<typename T>
+class BestStorer
+{
+	const ABKResultDetails *_pr;
+	int3  *res;
+public:
+	__device__ BestStorer(const ABKResultDetails *pr): _pr(pr)
+	{
+		res = (int3 *) _sm_buffer;
+	}
+	__device__ void operator() (bool vald, bool equ, bool isAlpha, int pairIndex, const ABKInputData<T> P) const
+	{
+		if (vald && ((!equ && isAlpha && res->x > P.worstCovers[pairIndex]) ||
+				     (equ && !isAlpha && res->y > P.worstCovers[pairIndex])))
+		{
+			unsigned int mmm = 0xffffffff;	// Signals "empty" / unlocked
+			// There will be no interference from threads of this block, but there may be from threads of another
+			// block.  We use as Id a unique number derived from the blk coordinates
+			unsigned int nnw = blockIdx.y * gridDim.x + blockIdx.x;
+			unsigned int old = 0;
+			while (old != mmm)
+			{
+				old = atomicCAS(P.locks+pairIndex,mmm,nnw);
+			}
+			int pilIdx = pairIndex * _pr->dResPP;
+			bool b = true;
+			for (int q = 0; b && q < _pr->dResPP; q++)
+			{
+				if (_pr->pairList[pilIdx+q] == 0xffff)	// Signals empty
+				{
+					_pr->pairList[pilIdx+q] = res->z;
+					b = false;
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//					if (threadIdx.x == 0 && threadIdx.y == 0)
+//						printf("rIdx:%3d pairIdx:%6d  q:%2d\n", myResIndex, pairIndex, q);
+#endif
+				}
+			}
+			// Turn off the lock
+			old = atomicExch(P.locks+pairIndex,mmm);
+		}
+	}
+};
+
+__device__ int2 collectCover(const int nEP, const int intIdx)
+{
+	int __shared__ *scover;
+	scover = _sm_buffer;
+	int2 	daCover;		// x is Alpha, y is Beta
+	daCover.x = 0;
+	daCover.y = 0;
+	const int upp = min(blockDim.x * blockDim.y, nEP);
+	for (int j = 0; j < upp; j++)
+	{
+		daCover.x += scover[2*j];
+		daCover.y += scover[2*j+1];
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+//		printf("%d(%d,%d)   intIdx:%d   +%d,%d\t+%d,%d   %p\n", j, threadIdx.x, threadIdx.y, intIdx, scover[2*j], daCover.x, scover[2*j+1], daCover.y, scover + 2*j);
+#endif
+	}
+	return daCover;
+}
+
+template <typename T>
+__global__ void k2_v2(const ABKInputData<T> P, const dim3 firstG, const ABKResultDetails *pr)
+{
+	const int func = BFUNC_AND;
+	int intIdx = blockIdx.y * gridDim.x + blockIdx.x;
+	int idxA = blockIdx.y + firstG.y;	// SNP A goes on the Y direction ("vertical", "row")
+	int	idxB = blockIdx.x + firstG.x;
+//	int __shared__ myResIndex;
+	int3 __shared__ *res;
+	if (idxA > idxB)
+		return;
+
+	k2_macro(P, idxA, idxB, func, pr, CoverCalc<T>());
+	res = (int3 *)((int *) _sm_buffer + 2*(blockDim.x * blockDim.y));
+	__threadfence_block();
+	if (threadIdx.x == 0 && threadIdx.y == 0)
+	{
+		int2	r = collectCover(P.nELE * (P.nELE + 1) / 2, intIdx);
+		PILindex_t	myResIndex;
+		if (r.x > P.worstCoverAlpha || r.y > P.worstCoverBeta)
+		{
+			myResIndex = atomicAdd((int *)&(pr->currIndex), 1);
+			pr->selected[myResIndex].alphaC = r.x;
+			pr->selected[myResIndex].betaC = r.y;
+			pr->selected[myResIndex].fun = func;
+			pr->selected[myResIndex].sA = idxA;
+			pr->selected[myResIndex].sB = idxB;
+		}
+		else
+			myResIndex = 0xffff;
+		res->x = r.x;
+		res->y = r.y;
+		res->z = myResIndex;
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+		printf("Interaction:%d[%d,%d] cA:%d cB:%d selIdx:%d\n", intIdx, idxA, idxB, res->x, res->y, res->z);
+//		printf("Interaction:%d[%d,%d] cA:%d cB:%d selIdx:%d\n", intIdx, idxA, idxB, r.x, r.y, myResIndex);
+#endif
+	}
+	__threadfence_block();
+	// Finish block if nothing to do  // Next func !!
+	if (res->z == 0xffff || res->z >= pr->maxSelected - 1)
+		return;
+
+	k2_macro(P, idxA, idxB, func, pr, BestStorer<T>(pr));
+
+}
+
+// Launcher of the kernel 2 function.
 template <typename T, typename Key>
 void launch_process_gpu_2(PlinkReader<T> *pr, ABKEpiGraph<Key, T> &abkeg, const struct _paramP1 &par)
 {
@@ -426,7 +685,8 @@ void launch_process_gpu_2(PlinkReader<T> *pr, ABKEpiGraph<Key, T> &abkeg, const 
 	clog << endl;
 	sendWorstCovers(abkeg,d_InDPT,par);
 	clog << endl;
-	k2_g<T><<<grid,block,16384>>>(d_InDPT, fgr, p_abkr);
+//	k2_g<T><<<grid,block,16384>>>(d_InDPT, fgr, p_abkr);
+	k2_v2<T><<<grid,block,16384>>>(d_InDPT, fgr, p_abkr);
 
 #ifdef CACA
 	{
