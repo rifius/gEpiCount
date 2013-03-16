@@ -78,6 +78,9 @@ typedef struct _abkResultDetails
 	PILindex_t 				*pairList;		// Indexes per pair
 } ABKResultDetails;
 
+#define		EMPTY_INDEX_B1	0xff
+#define		EMPTY_INDEX_B2	0xffff
+#define		EMPTY_INDEX_B4	0xffffffff
 
 // A couple of macro function definitions to convert from a row, column (col > row)
 // to a unique index in a squared matrix of size N, upper triangular part.

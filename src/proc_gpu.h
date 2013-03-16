@@ -195,20 +195,21 @@ __global__ void k1_count(const struct _dataPointersD<T> dptrs, IntResultPointers
 
 //######## For Kernel 2 (ABK)
 void process_gpu_2(PlinkReader<ui8> *pr, ABKEpiGraph<int64_t, ui8> &abkeg, const struct _paramP1 &par);
-//void process_gpu_2(PlinkReader<ui8> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
-//void process_gpu_2(PlinkReader<ui4> *pr, const size_t nPairs, const int nResPP, PairInteractionResult *ptops, const struct _paramP1 &par);
 
-//template <typename T>
-//__global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const size_t nSNPs, const size_t nSamp,
-//		const size_t nELE, const size_t nPairs, const int nResPP, PairInteractionResult *ptops);
 template <typename T>
 __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResultDetails *ptr);
+template <typename T, class Funct>
+__device__ void k2_macro(const ABKInputData<T> P, int idxA, int idxB, int boolfunc, const ABKResultDetails *pr, Funct op);
+template <typename T>
+__global__ void k2_v2(const ABKInputData<T> P, const dim3 firstG, const ABKResultDetails *pr);
 __global__ void k2_initPairList(ABKResultDetails *pr);
 
 int allocResults_device(const ABKResultDetails &ld_abkr, ABKResultDetails **pd_abkr, const struct _paramP1 &par);
 int allocResults_host(ABKResultDetails &h_abkr, const struct _paramP1 &par);
 void freeResults_device(const ABKResultDetails &h_abkr, const ABKResultDetails *p_abkr, const struct _paramP1 &par);
 void freeResults_host(const ABKResultDetails &h_pir, const struct _paramP1 &par);
+
+bool transferBack(const ABKResultDetails *pd_abk, ABKResultDetails *h_abk, const struct _paramP1 &par);
 
 //template <typename Key, typename T>
 //bool sendWorstCovers(const ABKEpiGraph<Key,T> &eg, const ABKInputData<T> &id, const struct _paramP1 &par);

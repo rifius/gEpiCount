@@ -52,6 +52,51 @@ __host__ inline void printResults(const IntResultPointers &h_ptrs, int numT, dim
 	}
 }
 
+__host__ inline void printResultBuffer(const ABKResultDetails *pr, const unsigned char *flags, const int *worstCs)
+{
+	fprintf(stderr,"IR\tidxA\tidxB\tfun\tcovA\tcovB\n");
+	for (int j = 0; j < pr->currIndex; j++)
+	{
+		PairInteractionResult *ir = pr->selected + j;
+		fprintf(stderr, "%d\t%d\t%d\t%s\t%d\t%d\n", j, ir->sA, ir->sB, _binaryFuncName[ir->fun].c_str(), ir->alphaC, ir->betaC);
+	}
+	// This is just to check the cover numbers
+	fprintf(stderr,"\n");
+	for (int j = 0; j < pr->nPairs; j++)
+	{
+		int base = j * pr->dResPP;
+		char v = (flags[j] & P_VALID) == P_VALID ? '.': 'I';
+		char a = (flags[j] & P_ALPHA) == P_ALPHA ? 'A': 'B';
+		fprintf(stderr, "pair:%d.%c%c %02x\twc:%d", j, a, v, flags[j], worstCs[j]);
+		for (int k = 0; k < pr->dResPP; k++)
+		{
+			if (pr->pairList[base + k] != EMPTY_INDEX_B2)
+			{
+				fprintf(stderr, "\t%d", pr->pairList[base + k]);
+				if (v != 'I')
+				{
+					if (a == 'A')
+						pr->selected[pr->pairList[base+k]].alphaC--;
+					else
+						pr->selected[pr->pairList[base+k]].betaC--;
+				}
+			}
+			else
+			{
+				fprintf(stderr,"\t");
+			}
+		}
+		fprintf(stderr,"\n");
+	}
+	fprintf(stderr,"\n");
+	for (int j = 0; j < pr->currIndex; j++)
+	{
+		PairInteractionResult *ir = pr->selected + j;
+		if (ir->alphaC != 0 || ir->betaC != 0)
+			fprintf(stderr, "*%d\t%d\t%d\t%d\t%d\n", j, ir->sA, ir->sB, ir->alphaC, ir->betaC);
+	}
+}
+
 // Aux function to print interaction result
 template<typename T>
 inline void printInteractions(const PlinkReader<T> *pr, const InteractionResult *tops, int numT,
@@ -147,5 +192,6 @@ inline void print_data(const PlinkReader<ui4> *pr, int koff = 0, int ndata = 1) 
 
 	printf("\n");
 }
+
 
 #endif	// PRINT_MISC_H

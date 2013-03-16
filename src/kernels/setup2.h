@@ -130,8 +130,8 @@ __host__ bool initCycleResults_device(const ABKEpiGraph<Key,T> &eg, const ABKInp
 //	k2_initPairList<<<grid,block,16384>>>(p_abkr);
 	// Clear results array on device
 	CUDACHECK(cudaMemset(ld_abr.selected,0,ld_abr.maxSelected*sizeof(PairInteractionResult)),par.gpuNum);
-	CUDACHECK(cudaMemset(ld_abr.pairList,0xff,ld_abr.nPairs*ld_abr.dResPP*sizeof(PILindex_t)),par.gpuNum);
-	CUDACHECK(cudaMemset(id.locks,0xff,id.numPairs*sizeof(unsigned int)),par.gpuNum);
+	CUDACHECK(cudaMemset(ld_abr.pairList,EMPTY_INDEX_B1,ld_abr.nPairs*ld_abr.dResPP*sizeof(PILindex_t)),par.gpuNum);
+	CUDACHECK(cudaMemset(id.locks,EMPTY_INDEX_B1,id.numPairs*sizeof(unsigned int)),par.gpuNum);
 	CUDACHECK(cudaDeviceSynchronize(),par.gpuNum);
 	clog << "K2: initCycle " << tt.stop() << "sec. " << p_abkr << endl;
 #undef 	HERE_BLOCK_DIM

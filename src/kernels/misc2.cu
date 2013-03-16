@@ -106,3 +106,11 @@ __global__ void k2_initPairList(ABKResultDetails *pr)
 		pr->currIndex = 0;
 }
 
+bool transferBack(const ABKResultDetails *pd_abk, ABKResultDetails *h_abk, const struct _paramP1 &par)
+{
+	ABKResultDetails  mabk;
+	CUDACHECK(cudaMemcpy(&mabk,pd_abk,sizeof(ABKResultDetails),cudaMemcpyDeviceToHost),par.gpuNum);
+	CUDACHECK(cudaMemcpy(h_abk->selected,mabk.selected,mabk.maxSelected*sizeof(PairInteractionResult),cudaMemcpyDeviceToHost),par.gpuNum);
+	CUDACHECK(cudaMemcpy(h_abk->pairList,mabk.pairList,mabk.nPairs*mabk.dResPP*sizeof(PILindex_t),cudaMemcpyDeviceToHost),par.gpuNum);
+	h_abk->currIndex = mabk.currIndex;
+}
