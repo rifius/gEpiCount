@@ -52,7 +52,7 @@ __host__ inline void printResults(const IntResultPointers &h_ptrs, int numT, dim
 	}
 }
 
-__host__ inline void printResultBuffer(const ABKResultDetails *pr, const unsigned char *flags, const int *worstCs)
+__host__ inline void printResultBuffer(const ABKResultDetails *pr, const unsigned char *flags, const int *worstCs, bool printPairs = false)
 {
 	fprintf(stderr,"IR\tidxA\tidxB\tfun\tcovA\tcovB\n");
 	for (int j = 0; j < pr->currIndex; j++)
@@ -67,12 +67,16 @@ __host__ inline void printResultBuffer(const ABKResultDetails *pr, const unsigne
 		int base = j * pr->dResPP;
 		char v = (flags[j] & P_VALID) == P_VALID ? '.': 'I';
 		char a = (flags[j] & P_ALPHA) == P_ALPHA ? 'A': 'B';
-		fprintf(stderr, "pair:%d.%c%c %02x\twc:%d", j, a, v, flags[j], worstCs[j]);
+		if (printPairs)
+		{
+			fprintf(stderr, "pair:%d.%c%c %02x\twc:%d", j, a, v, flags[j], worstCs[j]);
+		}
 		for (int k = 0; k < pr->dResPP; k++)
 		{
 			if (pr->pairList[base + k] != EMPTY_INDEX_B2)
 			{
-				fprintf(stderr, "\t%d", pr->pairList[base + k]);
+				if (printPairs)
+					fprintf(stderr, "\t%d", pr->pairList[base + k]);
 				if (v != 'I')
 				{
 					if (a == 'A')
@@ -83,10 +87,12 @@ __host__ inline void printResultBuffer(const ABKResultDetails *pr, const unsigne
 			}
 			else
 			{
-				fprintf(stderr,"\t");
+				if (printPairs)
+					fprintf(stderr,"\t");
 			}
 		}
-		fprintf(stderr,"\n");
+		if (printPairs)
+			fprintf(stderr,"\n");
 	}
 	fprintf(stderr,"\n");
 	for (int j = 0; j < pr->currIndex; j++)

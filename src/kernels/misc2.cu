@@ -113,4 +113,6 @@ bool transferBack(const ABKResultDetails *pd_abk, ABKResultDetails *h_abk, const
 	CUDACHECK(cudaMemcpy(h_abk->selected,mabk.selected,mabk.maxSelected*sizeof(PairInteractionResult),cudaMemcpyDeviceToHost),par.gpuNum);
 	CUDACHECK(cudaMemcpy(h_abk->pairList,mabk.pairList,mabk.nPairs*mabk.dResPP*sizeof(PILindex_t),cudaMemcpyDeviceToHost),par.gpuNum);
 	h_abk->currIndex = mabk.currIndex;
+	// TODO  return status should indicate status of buffer
+	return false;
 }

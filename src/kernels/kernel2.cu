@@ -203,7 +203,7 @@ __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResult
 			pr->selected[myResIndex].sB = idxB;
 		}
 		else
-			myResIndex = -1;
+			myResIndex = EMPTY_INDEX_B2;
 
 	}
 	__syncthreads();
@@ -253,21 +253,18 @@ __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResult
 					pairIndex = INDEXATROWCOL_V00ND(sIdy,sIdx,P.numSamples);
 					bool eqeq = ((equval & selector) == selector);
 					bool vald = ((valval & selector) == selector);
-					bool a = ((P.pFlag[pairIndex] & P_ALPHA == P_ALPHA) && !eqeq && (coverAlpha > P.worstCovers[pairIndex])) && vald;
-//					bool a = (P.pFlag[pairIndex] & P_VALID == P_VALID) && vald;	// Should not need to do this, valid samples considered in masks !
-//					&&
-//							(((P.pFlag[pairIndex] & P_ALPHA == P_ALPHA) && !eqeq && (coverAlpha > P.worstCovers[pairIndex])) ||
-//							 ((P.pFlag[pairIndex] & P_ALPHA == 0) && eqeq && (coverBeta > P.worstCovers[pairIndex])));
+					bool isAlpha = ((P.pFlag[pairIndex] & P_ALPHA) == P_ALPHA);
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
 //					printf("\t%d\t%d,%d\tr:%d,c:%d  Pi %d  =%dv[%d] fl:%x, th %d a:%d\n", intIdx, e1, e2, sIdy, sIdx, pairIndex,
 //							eqeq, vald, P.pFlag[pairIndex], threadIdx.x, a);
 #endif
-					if (a)
+					if (vald && ((!eqeq && isAlpha && coverAlpha > P.worstCovers[pairIndex]) ||
+							     (eqeq && !isAlpha && coverBeta > P.worstCovers[pairIndex])))
 					{
 						unsigned int mmm = EMPTY_INDEX_B4;	// Signals "empty" / unlocked
 						// There will be no interference from threads of this block, but there may be from threads of another
-						// block.  We use as Id the interaction index.
-						unsigned int nnw = intIdx;
+						// block.  We use as Id a unique number derived from the blk coordinates
+						unsigned int nnw = blockIdx.y * gridDim.x + blockIdx.x;
 						unsigned int old = 0;
 						while (old != mmm)
 						{
@@ -281,21 +278,15 @@ __global__ void k2_g(const ABKInputData<T> P, const dim3 firstG, const ABKResult
 							{
 								pr->pairList[pilIdx+q] = myResIndex;
 								b = false;
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
-//								if (threadIdx.x == 0 && threadIdx.y == 0)
-//									printf("rIdx:%3d pairIdx:%6d  q:%2d\n", myResIndex, pairIndex, q);
-#endif
+			#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
+			//					if (threadIdx.x == 0 && threadIdx.y == 0)
+			//						printf("rIdx:%3d pairIdx:%6d  q:%2d\n", myResIndex, pairIndex, q);
+			#endif
 							}
-							covA[threadIdx.x]++;
 						}
 						// Turn off the lock
 						old = atomicExch(P.locks+pairIndex,mmm);
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
-//						assert(b ? 0 : 1);
-#endif
-
 					}
-
 				}
 				selector <<= 1;
 			}
@@ -404,7 +395,6 @@ class CoverCalc
 public:
 	__device__ CoverCalc(int *ptr): cover(ptr)
 	{
-//		cover = (int *)_sm_buffer + 2*(threadIdx.y*blockDim.x+threadIdx.x);
 		cover[0] = 0;
 		cover[1] = 0;
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 200) && defined(DEBUG_PRINTS)
@@ -429,7 +419,6 @@ class BestStorer
 public:
 	__device__ BestStorer(const ABKResultDetails *pr, const int3 *rs): _pr(pr), res(rs)
 	{
-//		res = (int3 *) _sm_buffer;
 	}
 	__device__ void operator() (bool vald, bool equ, bool isAlpha, int pairIndex, const ABKInputData<T> P) const
 	{
@@ -491,12 +480,12 @@ __global__ void k2_v2(const ABKInputData<T> P, const dim3 firstG, const ABKResul
 	int intIdx = blockIdx.y * gridDim.x + blockIdx.x;
 	int idxA = blockIdx.y + firstG.y;	// SNP A goes on the Y direction ("vertical", "row")
 	int	idxB = blockIdx.x + firstG.x;
-//	int __shared__ myResIndex;
 	int3 __shared__ *res;
 	if (idxA > idxB)
 		return;
 
 	k2_macro(P, idxA, idxB, func, pr, CoverCalc<T>((int *)_sm_buffer + 2*(threadIdx.y*blockDim.x+threadIdx.x)));
+	// TODO: Manage shared mem locally and not via external buffer
 	res = (int3 *)((int *) _sm_buffer + 2*(blockDim.x * blockDim.y));
 	__threadfence_block();
 	if (threadIdx.x == 0 && threadIdx.y == 0)
@@ -583,12 +572,13 @@ void launch_process_gpu_2(PlinkReader<T> *pr, ABKEpiGraph<Key, T> &abkeg, const 
 	clog << endl;
 	sendWorstCovers(abkeg,d_InDPT,par);
 	clog << endl;
-//	k2_g<T><<<grid,block,16384>>>(d_InDPT, fgr, p_abkr);
-	k2_v2<T><<<grid,block,16384>>>(d_InDPT, fgr, p_abkr);
+	k2_g<T><<<grid,block,16384>>>(d_InDPT, fgr, p_abkr);
+//	k2_v2<T><<<grid,block,16384>>>(d_InDPT, fgr, p_abkr);
 	CUDACHECK(cudaDeviceSynchronize(),par.gpuNum);
 	transferBack(p_abkr, &h_abkr, par);
-
+	mergeResults(abkeg,&h_abkr,par);
 	printResultBuffer(&h_abkr, abkeg.getPairFlags(), abkeg.getWorstCovers());
+	abkeg.print();
 
 #ifdef CACA
 	{

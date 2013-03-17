@@ -73,5 +73,16 @@ __device__ T binaryFuncElement(const struct _dataPointersD<T> P, int idxA, int i
 }
 
 
+template<typename T, typename Key>
+__host__ int mergeResults(ABKEpiGraph<Key,T> &abkeg, const ABKResultDetails *pr, const struct _paramP1 &par)
+{
+	int newAdded = 0;
+	for (int j = 0; j < pr->nPairs; ++j)
+	{
+		int base = j * pr->dResPP;
+		newAdded += abkeg.updatePair(j, pr->selected, pr->currIndex, pr->pairList + base, pr->dResPP);
+	}
+	return newAdded;
+}
 
 #endif /* ANCILLARY2_H_ */
