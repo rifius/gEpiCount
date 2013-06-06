@@ -329,7 +329,7 @@ public:
 			}
 		}
 		fprintf(stderr, "\n%d SNPs checked, %d with more than %4g missing values\n\n", this->numSNPs(), ncSNPs, maxMissSNPs);
-//#undef NO_MT
+#undef NO_MT
 
 		return ncSNPs == 0 && ncSamp == 0;
 	}
@@ -362,7 +362,7 @@ private:
 				continue;
 			n = line.find_first_of(" \t", 0);
 			sn = line.substr(0, n);
-			sscanf(line.c_str(), "%*s %*d %*d %*d %d %d", &d, &e);
+			sscanf(line.c_str(), "%*s %*s %*d %*d %d %d", &d, &e);
 			Sample s(sn, d, e);
 			samples.push_back(s);
 			linecount++;
