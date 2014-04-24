@@ -44,6 +44,7 @@ private:
 	bool		dirty;			// worstCovers must be recomputed
 	const Key	keyForPIR(const PairInteractionResult &pir);
 	static const int SHIFTIDX = (sizeof(Key)*8+4)/2;
+	static const string _binaryFuncName[] = { "AND", "NAND", "ANDN", "NANDN", "XOR", "Invalid" };
 protected:
 	ABKEpiGraph();
 public:
@@ -60,6 +61,7 @@ public:
 	const unsigned char *getPairFlags() const;
 
 	void print();
+	void printPair(int pair);
 
 	int nPairs() const
 	{
@@ -262,6 +264,10 @@ inline int ABKEpiGraph<Key, T>::updatePair(int pair, const PairInteractionResult
 {
 	static const string _binaryFuncName[BFUNC_LAST + 1] = { "AND", "NAND", "ANDN", "NANDN", "XOR", "Invalid" };
 	int newPirs = 0;
+	if (!this->isValid(pair))
+		return newPirs;
+	bool meAlpha = this->isAlpha(pair);
+	bool meBeta = this->isBeta(pair);
 	for (int k = 0; k < maxIdxLen && idxs[k] != emptyIndex; k++)
 	{
 		PILindex_t cIndex = idxs[k];
@@ -296,12 +302,12 @@ inline int ABKEpiGraph<Key, T>::updatePair(int pair, const PairInteractionResult
 		TrackedPairInteractionResult *tpi = &(mit->second);
 		typename std::list<Key>::iterator lit;
 		int nCover = 0;
-		if (this->isAlpha(pair))
+		if (meAlpha)
 		{
 			nCover = irs[cIndex].alphaC;
 			for (lit = this->pairList[pair].begin(); lit != this->pairList[pair].end() && nCover < this->pirMap[*lit].ir.alphaC; ++lit) ;
 		}
-		else if (this->isBeta(pair))
+		else if (meBeta)
 		{
 			nCover = irs[cIndex].betaC;
 			for (lit = this->pairList[pair].begin(); lit != this->pairList[pair].end() && nCover < this->pirMap[*lit].ir.betaC; ++lit) ;
@@ -363,6 +369,17 @@ void ABKEpiGraph<Key, T>::print()
 				"\tInteraction: " << tpi->ir.sA << " " << _binaryFuncName[tpi->ir.fun] << " " << tpi->ir.sB <<
 				"\tcA:" << tpi->ir.alphaC << "\tcB:" << tpi->ir.betaC << std::endl;
 	}
+}
+
+template<class Key, typename T>
+void ABKEpiGraph<Key,T>::printPair(int pair)
+{
+	if (!this->isValid(pair))
+	{
+		clog << "Pair:\t" << pair << "\t(invalid)\tList:\t" << this->pairList[pair].size() << endl;
+	}
+
+
 }
 
 #endif /* ABKEPIGRAPH_H_ */
